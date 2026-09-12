@@ -1,0 +1,58 @@
+# HANDOFF (세션별 서술 로그, append-only)
+
+## 2026-09-11: FastAPI 마이그레이션 및 도메인 API 전수 구축
+- 기존 Java/Spring Boot `backend-book` 서비스를 Python 3.12, FastAPI, SQLAlchemy 2.0 (asyncpg), Alembic, Pydantic V2 스택으로 마이그레이션 완료.
+- Supabase PostgreSQL `core` 스키마 격리 DDL 및 ORM 모델 6종(`shelf`, `library_book`, `scrap`, `librarian_type_info`, `librarian_level`, `librarian`) 구축.
+- 62진수 LexoRank(`ShelfRank`) 정렬 알고리즘, KDC 10대 대분류 매퍼(`@computed_field genreName`), 국립중앙도서관 비동기 도서 검색 클라이언트(`httpx`) 구현.
+- 18종 표준 에러 처리 및 26개 API 엔드포인트 전수 구현 완료.
+- 총 41개 단위/통합 테스트 작성 및 100% 통과 검증.
+
+## 2026-09-11: 무과금(Zero-Cost) 배포 정책 최적화
+- `/health` 엔드포인트에 Supabase `SELECT 1` 쿼리 실행 로직을 연동하여, 1회의 헬스체크로 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 동시 방지하도록 개선.
+- `CORS_ORIGINS` 환경변수를 분리하여 Cloudflare 프론트엔드 도메인을 안전하게 화이트리스트에 등록할 수 있도록 설정.
+- `.github/workflows/keep-alive.yml` GitHub Actions 크론(14분 간격)을 구축하여 $0 무과금 상시 가동 환경 완성.
+- 사서 대표 타입을 명세서 최종본에 맞춰 `CAT`으로 확정 반영 (레거시 `RUSSIAN_BLUE` 별칭 호환).
+
+## 2026-09-12: 독서 감상 기록(Record) CRUD 통합 & 하네스 표준 구축
+- `backend-record` 서비스의 독서 감상 기록(Record) 및 스크랩(Scrap) 원본 영속화 CRUD를 `backend-core-api`로 일원화 (단일 진실 공급원 SSOT 확립).
+- `record.records`, `record.scraps` 테이블 DDL 및 Alembic 리비전(`002_add_record_schema.py`) 작성.
+- 독서 기록 소프트 삭제 시 연결된 스크랩 일괄 소프트 삭제(Soft Delete Cascade) 및 AI 벡터화(`trigger_ai_vectorization`) 비동기 트리거 구현.
+- `X-Member-Id` 헤더 검증 및 422 Unprocessable Entity 에러 처리 반영, 총 44개 테스트 100% 통과.
+- DPYB 조직 공통 [바이브 코딩 하네스 표준] 구축 완료 (`AGENTS.md`, `CLAUDE.md`, `.kiro/`, `.harness/` 6개 문서).
+
+## 2026-09-13: 중앙 Reusable CI 연동 및 DPYB 최신 개발 표준 하네스 전면 동기화
+- **워크플로우 정비**:
+  - 개별 킵얼라이브(`.github/workflows/keep-alive.yml`)를 삭제하고, `DPYB/.github` 중앙 레포의 10분 주기 일괄 헬스체크 핑 연동으로 일원화.
+  - `/health` 엔드포인트의 Supabase `SELECT 1` 실행 및 에러 처리 보장 로직 유지 확인.
+  - `.github/workflows/ci.yml` 및 `.github/workflows/lint-pr.yml`을 구성하여 중앙 Reusable 워크플로우(`reusable-python-ci.yml`, `reusable-pr-lint.yml`) 연동 완료.
+- **코드 품질 및 의존성 정비**:
+  - `pyproject.toml`에 `greenlet>=3.0.0`, `ruff>=0.3.0`, `mypy>=1.9.0` 설정 추가 및 코드베이스 전체 `ruff check`, `ruff format` 일괄 정리. (44개 pytest 100% Pass)
+- **하네스 문서 최신 표준 명문화**:
+  - `AGENTS.md`, `.harness/ARCHITECTURE.md`, `docs/HARNESS_SETUP_GUIDE.md`:
+    1. 브랜치는 `feat/*` 단일 접두사 사용 (`feature/*` 금지, `develop` 기본 분기/머지).
+    2. PR 및 커밋은 `타입[적용범위]: 요약`의 `[scope]` 대괄호 형식 엄수 (소괄호 및 마침표 금지).
+    3. 인간 개입 지점: AI 에이전트는 PR 생성까지만 수행하며, `develop` 및 `main` 머지 버튼은 사람이 최종 확인 후 직접 클릭.
+    4. 독서 기록 관련 RDBMS CRUD 및 데이터 영속화(`record` 스키마)는 `backend-core-api`가 전담 소유(단일 진실 공급원 SSOT)함을 명문화.
+
+## 2026-09-13: develop 브랜치 생성 및 8단계 원자적 커밋/원격 푸시 완료
+- **보안 및 민감정보 보호 전수 검증**:
+  - `.env` 및 `.env.*` 패턴과 캐시 디렉터리(`.ruff_cache/`, `.mypy_cache/`)를 `.gitignore`에 보완 반영하여 시크릿 유출 원천 차단.
+  - 불필요한 `docs/` 디렉터리 삭제.
+  - `pyproject.toml`에 `[tool.mypy]` 호환 설정을 적용하여 중앙 CI Mypy 검증 통과 보장.
+- **원자적 커밋 및 develop 푸시**:
+  - `develop` 브랜치 분기 후 DPYB 커밋 컨벤션(`타입[적용범위]: 요약`)에 맞춰 8단계 분할 커밋 수행:
+    1. `chore[project]: 기본 프로젝트 환경 및 빌드/도커 설정 추가`
+    2. `feat[database]: Supabase core 및 record 스키마 Alembic 마이그레이션 구성`
+    3. `feat[core]: FastAPI 앱 진입점 및 DB/인증/예외 공통 모듈 구현`
+    4. `feat[library]: 서재·도서·스크랩 및 사서 도메인 모델/서비스/라우터 구현`
+    5. `feat[record]: 독서 감상 기록 및 스크랩 영속화 CRUD 구현`
+    6. `test[all]: 44개 도메인 단위 및 API 통합 테스트 스위트 추가`
+    7. `ci[github]: 중앙 Reusable 워크플로우 연동 CI/린트 파이프라인 구성`
+    8. `docs[harness]: DPYB 개발 하네스 체계 및 서비스 문서화`
+  - `origin/develop` 브랜치로 원격 푸시 완료.
+
+**다음 세션 시작 시**:
+1. Supabase 실제 클라우드 인스턴스에 `alembic upgrade head` 마이그레이션 적용 및 커넥션 풀러(6543) 연결 검증.
+2. Render Web Service 컨테이너 배포 및 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
+3. `backend-ai-agent` 서버와의 사서/토론 모드 Function Calling(Tool) 연동 테스트 진행.
+
