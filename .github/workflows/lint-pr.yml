@@ -1,0 +1,9 @@
+name: Lint PR
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  lint:
+    uses: DPYB/.github/.github/workflows/reusable-pr-lint.yml@main
