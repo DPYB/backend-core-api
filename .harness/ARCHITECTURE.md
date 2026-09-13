@@ -62,7 +62,7 @@ MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안�
 
 ## 5. API 계약 및 보안 컨벤션
 
-- **인증 헤더**: `Authorization: Bearer <cognito_access_token>` (일부 독서 기록 엔드포인트는 `X-Member-Id` 헤더 병행 지원).
+- **인증 헤더**: `Authorization: Bearer <jwt_access_token>` (Auth Service / Google OAuth 연계, `sub` UUID 식별자 추출. 일부 독서 기록 엔드포인트는 `X-Member-Id` 헤더 병행 지원).
 - **에러 응답 규격**: 모든 에러 응답은 `{"code": "ERROR_CODE", "message": "설명"}` 일관된 JSON 바디를 반환합니다.
 - **무과금 Keep-Alive**: `/health` 엔드포인트 호출 시 Supabase에 `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지합니다. 개별 크론 대신 중앙 `DPYB/.github` 레포에서 10분 주기로 일괄 핑을 수행합니다.
 
