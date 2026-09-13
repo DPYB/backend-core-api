@@ -58,7 +58,11 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at TIMESTAMPTZ NULL
         );
-        CREATE INDEX IF NOT EXISTS ix_shelf_member_id ON core.shelf (member_id);
+    """)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_shelf_member_id ON core.shelf (member_id);"
+    )
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uk_shelf_member_default ON core.shelf (member_id) 
             WHERE is_default = true AND deleted_at IS NULL;
     """)
@@ -86,8 +90,12 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at TIMESTAMPTZ NULL
         );
+    """)
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uk_library_book_shelf_rank ON core.library_book (shelf_id, shelf_rank) 
             WHERE deleted_at IS NULL;
+    """)
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uk_library_book_member_isbn ON core.library_book (member_id, isbn) 
             WHERE isbn IS NOT NULL AND deleted_at IS NULL;
     """)
@@ -105,8 +113,8 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at TIMESTAMPTZ NULL
         );
-        CREATE INDEX IF NOT EXISTS ix_scrap_book_id ON core.scrap (book_id);
     """)
+    op.execute("CREATE INDEX IF NOT EXISTS ix_scrap_book_id ON core.scrap (book_id);")
 
     # 3.4 core.librarian_type_info
     op.execute("""
@@ -143,10 +151,16 @@ def upgrade() -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at TIMESTAMPTZ NULL
         );
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_librarian_member_id ON core.librarian (member_id) 
             WHERE deleted_at IS NULL;
+    """)
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uk_librarian_member_type ON core.librarian (member_id, type) 
             WHERE deleted_at IS NULL;
+    """)
+    op.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS uk_librarian_member_representative ON core.librarian (member_id) 
             WHERE is_representative = true AND deleted_at IS NULL;
     """)
@@ -160,7 +174,8 @@ def upgrade() -> None:
           ('SEA_SLUG', 'https://example.com/librarians/sea-slug.png', 'https://example.com/librarians/sea-slug-clicked.png', now(), now()),
           ('GECKO', 'https://example.com/librarians/gecko.png', 'https://example.com/librarians/gecko-clicked.png', now(), now())
         ON CONFLICT (type) DO NOTHING;
-
+    """)
+    op.execute("""
         INSERT INTO core.librarian_level (level, required_experience, created_at, updated_at)
         VALUES (1, 0, now(), now())
         ON CONFLICT (level) DO NOTHING;

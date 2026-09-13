@@ -35,11 +35,13 @@ def upgrade() -> None:
             updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at        TIMESTAMPTZ
         );
-
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_records_member_id
             ON record.records (member_id, created_at DESC)
             WHERE deleted_at IS NULL;
-
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_records_book_id
             ON record.records (book_id)
             WHERE deleted_at IS NULL;
@@ -60,15 +62,18 @@ def upgrade() -> None:
             updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
             deleted_at        TIMESTAMPTZ
         );
-
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_scraps_record_id
             ON record.scraps (record_id)
             WHERE deleted_at IS NULL;
-
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_scraps_member_id
             ON record.scraps (member_id, created_at DESC)
             WHERE deleted_at IS NULL;
-
+    """)
+    op.execute("""
         CREATE INDEX IF NOT EXISTS ix_scraps_book_id
             ON record.scraps (book_id)
             WHERE deleted_at IS NULL;
@@ -83,14 +88,16 @@ def upgrade() -> None:
             RETURN NEW;
         END;
         $$ LANGUAGE 'plpgsql';
-
-        DROP TRIGGER IF EXISTS trg_records_updated_at ON record.records;
+    """)
+    op.execute("DROP TRIGGER IF EXISTS trg_records_updated_at ON record.records;")
+    op.execute("""
         CREATE TRIGGER trg_records_updated_at
             BEFORE UPDATE ON record.records
             FOR EACH ROW
             EXECUTE FUNCTION record.update_updated_at_column();
-
-        DROP TRIGGER IF EXISTS trg_scraps_updated_at ON record.scraps;
+    """)
+    op.execute("DROP TRIGGER IF EXISTS trg_scraps_updated_at ON record.scraps;")
+    op.execute("""
         CREATE TRIGGER trg_scraps_updated_at
             BEFORE UPDATE ON record.scraps
             FOR EACH ROW
