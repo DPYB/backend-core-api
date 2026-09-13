@@ -43,7 +43,7 @@
   - **도서 및 스크랩 Soft Delete Cascade**: 도서 또는 독서 기록 삭제 시 소속된 스크랩 일괄 소프트 삭제 (`deleted_at = now()`).
   - **Default Shelf 보장**: 회원당 기본 책장 자동 생성(Get-or-Create) 및 삭제 불가(`DEFAULT_SHELF_CANNOT_BE_DELETED`). 책장 삭제 시 소속 도서는 기본 책장 맨 뒤로 자동 이관.
 - **인증 계약**:
-  - Cognito Access Token 검증 (`token_use == 'access'`, `client_id` 검증, `sub` → `member_id UUID`).
+  - Auth Service Bearer JWT 토큰 검증 (`sub` 또는 `member_id` → `UUID` 변환, 선택적 서명 검증).
   - 독서 기록 엔드포인트는 `X-Member-Id` 헤더 병행 지원 (누락 시 `422 Unprocessable Entity`).
 - **에러 응답 규격**: 모든 예외는 전역 핸들러를 통해 일관되게 `{"code": "ERROR_CODE", "message": "설명"}` 형태로 반환 (18종 카탈로그 준수).
 - **무과금 배포 정책 ($0)**:

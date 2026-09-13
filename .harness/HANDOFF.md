@@ -51,8 +51,18 @@
     8. `docs[harness]: DPYB 개발 하네스 체계 및 서비스 문서화`
   - `origin/develop` 브랜치로 원격 푸시 완료.
 
+## 2026-09-13: 실환경 Supabase 마이그레이션 및 개별 DB 환경변수 지원
+- **환경변수 편의성 및 보안 강화**:
+  - 비밀번호 내 특수문자(`@`, `%`, `$` 등)로 인한 URL 파싱 오류를 방지하기 위해 `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME` 개별 환경변수 및 자동 URL 인코딩 기능 추가 (`app/config.py`).
+  - `.env.example`에 개별 환경변수 설정 가이드 반영.
+- **asyncpg 다중 DDL 실행 호환성 개선**:
+  - Alembic 마이그레이션 스크립트(`001_initial_core_schema.py`, `002_add_record_schema.py`)에서 `asyncpg`의 prepared statement 다중 쿼리 제약 해소를 위해 테이블 및 인덱스/트리거 DDL을 단일 `op.execute` 단위로 분할.
+  - `alembic/env.py`에서 `core` 및 `record` 스키마 사전 생성 시 트랜잭션 커밋 보장.
+- **클라우드 Supabase DB 마이그레이션 전수 검증**:
+  - `alembic upgrade head` 성공: `core` 스키마 6종 테이블, `record` 스키마 2종 테이블, 사서 4종 초기 시드 데이터 정상 적재 확인.
+
 **다음 세션 시작 시**:
-1. Supabase 실제 클라우드 인스턴스에 `alembic upgrade head` 마이그레이션 적용 및 커넥션 풀러(6543) 연결 검증.
-2. Render Web Service 컨테이너 배포 및 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
+1. Render Web Service 컨테이너 배포 및 환경변수 등록 (`DB_USER`, `DB_PASSWORD` 등).
+2. 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
 3. `backend-ai-agent` 서버와의 사서/토론 모드 Function Calling(Tool) 연동 테스트 진행.
 

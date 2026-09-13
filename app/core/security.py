@@ -14,7 +14,7 @@ DEFAULT_TEST_MEMBER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 def decode_jwt_token(token: str) -> dict:
     """
-    Cognito Access Token 디코딩 및 기본 클레임 검증.
+    표준 JWT Bearer 토큰 디코딩 및 기본 클레임 검증.
     """
     # 1. 테스트용 Mock 토큰 처리: "mock-token-<uuid>" 또는 "test-token"
     if token.startswith("mock-token-"):
@@ -22,23 +22,31 @@ def decode_jwt_token(token: str) -> dict:
         return {
             "sub": mock_id,
             "token_use": "access",
-            "client_id": settings.AUTH_APP_CLIENT_ID,
         }
     if token == "test-token":
         return {
             "sub": str(DEFAULT_TEST_MEMBER_ID),
             "token_use": "access",
-            "client_id": settings.AUTH_APP_CLIENT_ID,
         }
 
     try:
-        # 서명 검증 없이 unverified decode로 claims를 파싱 (Cognito 공개키/JWKS 필요 시 확장 가능)
-        payload = jwt.decode(
-            token, options={"verify_signature": False, "verify_aud": False}
-        )
+        # JWT_SECRET_KEY가 구성되어 있으면 서명 검증 수행, 없으면 페이로드 디코딩
+        if settings.JWT_SECRET_KEY:
+            payload = jwt.decode(
+                token,
+                settings.JWT_SECRET_KEY,
+                algorithms=[settings.JWT_ALGORITHM],
+                options={"verify_aud": False},
+            )
+        else:
+            payload = jwt.decode(
+                token, options={"verify_signature": False, "verify_aud": False}
+            )
         return payload
-    except Exception as e:
+    except jwt.PyJWTError as e:
         raise UnauthorizedException("유효하지 않은 토큰입니다.") from e
+    except Exception as e:
+        raise UnauthorizedException("토큰 파싱에 실패했습니다.") from e
 
 
 async def get_current_member_id(
@@ -57,24 +65,14 @@ async def get_current_member_id(
     try:
         payload = decode_jwt_token(token)
 
-        # 1. token_use 검증 (ID 토큰 불가, 반드시 access 토큰이어야 함)
-        if payload.get("token_use") != "access":
-            raise UnauthorizedException("유효하지 않은 토큰입니다.")
-
-        # 2. client_id 일치 여부 확인 (설정된 경우에만)
-        if settings.AUTH_APP_CLIENT_ID:
-            token_client_id = payload.get("client_id")
-            if token_client_id and token_client_id != settings.AUTH_APP_CLIENT_ID:
-                raise UnauthorizedException("권한이 없는 클라이언트 토큰입니다.")
-
-        # 3. sub 클레임 추출 및 UUID 변환
-        sub = payload.get("sub")
+        # sub 클레임 추출 및 UUID 변환 (사용자 고유 UUID 식별자)
+        sub = payload.get("sub") or payload.get("member_id")
         if not sub:
             raise UnauthorizedException("토큰에 사용자 식별자가 존재하지 않습니다.")
 
-        return uuid.UUID(sub)
+        return uuid.UUID(str(sub))
 
-    except (ValueError, TypeError, KeyError) as e:
+    except (ValueError, TypeError) as e:
         raise UnauthorizedException("유효하지 않은 사용자 식별자입니다.") from e
     except UnauthorizedException:
         raise
