@@ -110,5 +110,39 @@
   - `backend-core-api` 내 기존 중복 파일(`.github/pull_request_template.md`)을 `git rm`으로 삭제 및 `origin/develop`에 푸시.
   - DPYB 조직 내 3개 전체 레포가 `DPYB/.github`의 공통 템플릿을 자동으로 참조하도록 단일 진실 공급원(SSOT) 확립 완료 (`gh api repos/.../community/profile` 검증 완료).
 
+## 2026-09-14: 프론트엔드 연동용 개발자 간편 로그인 & 쿠키 세션 호환 지원
+- **프론트엔드(`frontend-reader-web`) 원격 코드베이스 심층 분석**:
+  - 로컬 클론 없이 GitHub CLI/API로 프론트엔드 인증 구조(`LoginPage.jsx`, `authApi.js`, `AuthProvider.jsx`) 조회.
+  - 프론트엔드가 이메일/비번 폼 기반 `POST /api/v1/auth/login` 및 `authFetch`의 쿠키 기반 토큰 갱신(`POST /api/v1/auth/refresh`)을 호출하고 있음을 확인.
+- **개발자 간편 로그인 및 토큰 직렬화 호환**:
+  - `POST /api/v1/auth/login`: 이메일 기반 자동 가입(Get-or-Create), 기본 책장 및 기본 대표 고양이 사서(`CAT`, "블루", Lv.1) 자동 지급.
+  - `TokenResponse`: 프론트엔드 JS 호환을 위해 `@computed_field`를 통해 camelCase(`accessToken`, `refreshToken`)와 snake_case(`access_token`, `refresh_token`) 듀얼 직렬화 지원.
+  - `LoginResponse`: 프론트엔드 전역 상태(`AuthProvider`) 즉시 동기화를 위한 `member` 프로필 정보 포함.
+- **HttpOnly 쿠키 기반 세션 복원 및 CORS 개선**:
+  - `/login`, `/social/google`, `/social/kakao`, `/refresh`에서 `Set-Cookie: refresh_token=...; HttpOnly; SameSite=Lax` 발행.
+  - `POST /refresh`: Body 또는 Cookie 듀얼 수신을 지원하여 페이지 새로고침 시에도 세션 자동 복원 보장.
+  - `POST /logout`: `refresh_token` 쿠키 삭제(`Max-Age=0`).
+  - `CORSMiddleware`: 로컬 개발 프론트엔드 포트(5173, 3000 등) 대응 `allow_origin_regex` 추가.
+- **테스트 및 코드 품질**:
+  - 신규 통합 테스트 3건 추가 (`tests/test_social_auth_and_members.py`), 총 61개 테스트 100% Pass (소요시간 1.54s).
+  - `ruff check`, `ruff format`, `mypy app` 린트/타입 검증 완료.
 
+**다음 세션 시작 시**:
+1. 로컬 환경에서 `backend-core-api`(8000), `backend-ai-agent`(8001) 구동 후 `frontend-reader-web` E2E 연동 확인.
+2. Render Web Service 컨테이너 배포 및 Supabase 마이그레이션 적용.
+
+## 2026-09-14: DPYB 전사 레포 Squash 머지 단일화 및 원클릭 커밋 자동화
+- **전사 레포 머지 전략 일괄 적용 (`gh api`)**:
+  - DPYB 조직 산하 4개 전체 레포(`backend-core-api`, `backend-ai-agent`, `frontend-reader-web`, `.github`) 대상 API 일괄 패치 적용 완료:
+    1. `allow_merge_commit: false`: 불필요한 머지 커밋 옵션 원천 차단.
+    2. `allow_rebase_merge: false`: 리베이스 머지 차단.
+    3. `allow_squash_merge: true`: Squash and merge 단일화.
+    4. `squash_merge_commit_title: "PR_TITLE"`: PR 제목(`타입[적용범위]: 요약`)이 커밋 제목으로 100% 자동 매핑.
+    5. `squash_merge_commit_message: "BLANK"`: Extended description 본문은 기본 빈칸으로 자동 생성 (불필요한 작업 커밋 덤프 방지).
+    6. `delete_branch_on_merge: true`: 머지 완료 시 피처 브랜치 원격 자동 삭제.
+- **DPYB 공통 표준 및 스크립트 반영 (`DPYB/.github`)**:
+  - `docs/02-git-conventions.md`: Squash and merge 단일화 및 자동 커밋 매핑/본문 빈칸 머지 전략 명문화.
+  - `.github/scripts/setup-branch-protection.sh`: 레포지토리 전역 머지 전략 설정 단계 추가 반영 및 커밋/푸시 완료 (`d8439af`).
+- **개발자 경험 개선**:
+  - 머지 시 수동 텍스트 복사/편집 없이 **내용 확인 후 [Confirm squash and merge] 클릭 1회**로 DPYB 커밋 컨벤션 자동 준수 완성.
 
