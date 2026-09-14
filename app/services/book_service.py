@@ -88,11 +88,25 @@ class BookService:
         else:
             shelf_rank = ShelfRank.initial()
 
-        # 4. 페이지 유효성 검사
+        # 4. 페이지 유효성 검사 및 독서 상태/완독일시 자동 계산
         if req.total_pages is not None and req.current_page > req.total_pages:
             raise InvalidPageValueException(
                 "현재 페이지는 전체 페이지를 초과할 수 없습니다."
             )
+
+        status = req.reading_status
+        completed_at = None
+        if (
+            req.total_pages is not None
+            and req.total_pages > 0
+            and req.current_page == req.total_pages
+        ):
+            status = BookReadingStatus.COMPLETED
+            completed_at = datetime.now(UTC)
+        elif status == BookReadingStatus.COMPLETED:
+            completed_at = datetime.now(UTC)
+        elif req.current_page > 0 and status == BookReadingStatus.PLANNED:
+            status = BookReadingStatus.READING
 
         book = LibraryBook(
             member_id=member_id,
@@ -107,9 +121,10 @@ class BookService:
             publisher=req.publisher.strip() if req.publisher else None,
             published_date=req.published_date,
             cover_url=req.cover_url,
-            reading_status=req.reading_status,
+            reading_status=status,
             total_pages=req.total_pages,
             current_page=req.current_page,
+            completed_at=completed_at,
         )
         db.add(book)
         await db.commit()
@@ -132,6 +147,7 @@ class BookService:
             current_page=book.current_page,
             total_pages=book.total_pages,
             created_at=book.created_at,
+            completed_at=book.completed_at,
         )
 
     @staticmethod
@@ -249,6 +265,7 @@ class BookService:
                 current_page=b.current_page,
                 total_pages=b.total_pages,
                 created_at=b.created_at,
+                completed_at=b.completed_at,
             )
             for b in books
         ]
@@ -297,6 +314,7 @@ class BookService:
             total_pages=book.total_pages,
             created_at=book.created_at,
             updated_at=book.updated_at,
+            completed_at=book.completed_at,
         )
 
     @staticmethod
@@ -332,6 +350,25 @@ class BookService:
                     "이미 서재에 등록된 ISBN 도서입니다."
                 )
 
+        if req.total_pages is not None and book.current_page > req.total_pages:
+            raise InvalidPageValueException(
+                "현재 페이지가 변경된 전체 페이지를 초과합니다."
+            )
+
+        new_status = req.reading_status
+        if (
+            req.total_pages is not None
+            and req.total_pages > 0
+            and book.current_page == req.total_pages
+        ):
+            new_status = BookReadingStatus.COMPLETED
+
+        if new_status == BookReadingStatus.COMPLETED:
+            if book.completed_at is None:
+                book.completed_at = datetime.now(UTC)
+        else:
+            book.completed_at = None
+
         # ADR-0006: 11개 필드 전체 반영 (null 허용 필드는 null 전달 시 초기화)
         book.title = req.title.strip()
         book.author = req.author.strip()
@@ -342,13 +379,8 @@ class BookService:
         book.publisher = req.publisher.strip() if req.publisher else None
         book.published_date = req.published_date
         book.cover_url = req.cover_url
-        book.reading_status = req.reading_status
+        book.reading_status = new_status
         book.total_pages = req.total_pages
-
-        if req.total_pages is not None and book.current_page > req.total_pages:
-            raise InvalidPageValueException(
-                "현재 페이지가 변경된 전체 페이지를 초과합니다."
-            )
 
         await db.commit()
         await db.refresh(book)
@@ -370,6 +402,7 @@ class BookService:
             current_page=book.current_page,
             total_pages=book.total_pages,
             updated_at=book.updated_at,
+            completed_at=book.completed_at,
         )
 
     @staticmethod
@@ -577,6 +610,24 @@ class BookService:
             )
 
         book.current_page = current_page
+
+        # 자동 상태 전이 및 completed_at 동기화
+        if (
+            book.total_pages is not None
+            and book.total_pages > 0
+            and current_page == book.total_pages
+        ):
+            book.reading_status = BookReadingStatus.COMPLETED
+            if book.completed_at is None:
+                book.completed_at = datetime.now(UTC)
+        elif current_page > 0:
+            book.reading_status = BookReadingStatus.READING
+            book.completed_at = None
+        else:
+            # current_page == 0
+            if book.reading_status == BookReadingStatus.COMPLETED:
+                book.completed_at = None
+
         await db.commit()
         await db.refresh(book)
 
@@ -591,5 +642,7 @@ class BookService:
             current_page=book.current_page,
             total_pages=book.total_pages,
             progress=calc_progress,
+            reading_status=book.reading_status,
+            completed_at=book.completed_at,
             updated_at=book.updated_at,
         )

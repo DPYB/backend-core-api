@@ -41,6 +41,7 @@ class CreateLibraryBookResponse(CamelModel):
     current_page: int
     total_pages: int | None = None
     created_at: datetime
+    completed_at: datetime | None = None
 
     @computed_field
     @property
@@ -71,6 +72,7 @@ class LibraryBookItemResponse(CamelModel):
     current_page: int
     total_pages: int | None = None
     created_at: datetime
+    completed_at: datetime | None = None
 
     @computed_field
     @property
@@ -103,6 +105,7 @@ class LibraryBookDetailResponse(CamelModel):
     total_pages: int | None = None
     created_at: datetime
     updated_at: datetime
+    completed_at: datetime | None = None
 
     @computed_field
     @property
@@ -148,6 +151,7 @@ class UpdateLibraryBookResponse(CamelModel):
     current_page: int
     total_pages: int | None = None
     updated_at: datetime
+    completed_at: datetime | None = None
 
     @computed_field
     @property
@@ -204,4 +208,6 @@ class UpdateProgressResponse(CamelModel):
     current_page: int
     total_pages: int | None = None
     progress: float
+    reading_status: BookReadingStatus
+    completed_at: datetime | None = None
     updated_at: datetime
