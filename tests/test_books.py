@@ -237,3 +237,139 @@ async def test_delete_book_cascades_scraps(
     # 스크랩 조회 시 404 (캐스케이드 소프트 삭제 확인)
     get_s_resp = await client.get(f"/api/v1/library/scraps/{scrap_id}")
     assert get_s_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_progress_auto_completes_when_reaching_total_pages(
+    client: AsyncClient,
+):
+    # 1. totalPages 100인 도서 등록 (기본 PLANNED)
+    book_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "완독 테스트 도서", "author": "테스터", "totalPages": 100},
+        )
+    ).json()["bookId"]
+
+    # 2. current_page == total_pages (100) 도달
+    resp = await client.patch(
+        f"/api/v1/library/books/{book_id}/progress",
+        json={"currentPage": 100},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["currentPage"] == 100
+    assert data["progress"] == 100.0
+    assert data["readingStatus"] == "COMPLETED"
+    assert data["completedAt"] is not None
+
+    # 3. 단건 조회에서도 완독 상태와 completedAt 유지 확인
+    detail_resp = await client.get(f"/api/v1/library/books/{book_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["readingStatus"] == "COMPLETED"
+    assert detail["completedAt"] is not None
+
+
+@pytest.mark.asyncio
+async def test_update_progress_reverts_to_reading_when_page_decreased(
+    client: AsyncClient,
+):
+    # 1. 완독 상태인 도서 생성
+    book_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "되돌리기 도서", "author": "테스터", "totalPages": 100},
+        )
+    ).json()["bookId"]
+    await client.patch(
+        f"/api/v1/library/books/{book_id}/progress",
+        json={"currentPage": 100},
+    )
+
+    # 2. 페이지를 50으로 감소 -> READING 상태로 자동 복귀 및 completedAt 리셋
+    revert_resp = await client.patch(
+        f"/api/v1/library/books/{book_id}/progress",
+        json={"currentPage": 50},
+    )
+    assert revert_resp.status_code == 200
+    data = revert_resp.json()
+    assert data["currentPage"] == 50
+    assert data["progress"] == 50.0
+    assert data["readingStatus"] == "READING"
+    assert data["completedAt"] is None
+
+    # 3. 단건 조회에서도 리셋 확인
+    detail = (await client.get(f"/api/v1/library/books/{book_id}")).json()
+    assert detail["readingStatus"] == "READING"
+    assert detail["completedAt"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_progress_transitions_planned_to_reading(client: AsyncClient):
+    # 1. PLANNED 도서 생성 (currentPage 0)
+    book_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "읽기 시작 도서", "author": "테스터", "totalPages": 200},
+        )
+    ).json()["bookId"]
+
+    # 2. 10페이지 입력 시 PLANNED -> READING 자동 전이
+    resp = await client.patch(
+        f"/api/v1/library/books/{book_id}/progress",
+        json={"currentPage": 10},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["readingStatus"] == "READING"
+    assert data["completedAt"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_book_metadata_auto_sync_status_and_completed_at(
+    client: AsyncClient,
+):
+    # 1. totalPages: 200, currentPage: 150 도서 생성
+    create_resp = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "메타데이터 수정 도서",
+            "author": "테스터",
+            "totalPages": 200,
+            "currentPage": 150,
+            "readingStatus": "READING",
+        },
+    )
+    book_id = create_resp.json()["bookId"]
+
+    # 2. totalPages를 150으로 수정 (currentPage == totalPages 일치 발생)
+    update_resp = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={
+            "title": "메타데이터 수정 도서",
+            "author": "테스터",
+            "genre": "LITERATURE",
+            "readingStatus": "READING",  # 클라이언트가 READING으로 보냈어도 totalPages 도달로 COMPLETED 자동 전이
+            "totalPages": 150,
+        },
+    )
+    assert update_resp.status_code == 200
+    u_data = update_resp.json()
+    assert u_data["readingStatus"] == "COMPLETED"
+    assert u_data["completedAt"] is not None
+
+    # 3. 명시적으로 readingStatus를 READING으로 되돌릴 때 completedAt 리셋
+    revert_update = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={
+            "title": "메타데이터 수정 도서",
+            "author": "테스터",
+            "genre": "LITERATURE",
+            "readingStatus": "READING",
+            "totalPages": 300,
+        },
+    )
+    assert revert_update.status_code == 200
+    assert revert_update.json()["readingStatus"] == "READING"
+    assert revert_update.json()["completedAt"] is None
