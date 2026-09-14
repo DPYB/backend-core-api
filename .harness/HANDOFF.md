@@ -83,4 +83,22 @@
 2. 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
 3. `backend-ai-agent` 서버와의 사서/토론 모드 Function Calling(Tool) 연동 테스트 진행.
 
+## 2026-09-14: 독서 진도율 자동 동기화 & 국립중앙도서관 API 캐싱/내결함성 강화
+- **독서 진도율 및 완독 상태/일시(completed_at) 자동 동기화 (TDD)**:
+  - `core.library_book`에 `completed_at TIMESTAMPTZ NULL` 컬럼 추가 (Alembic `004_add_completed_at_to_library_book.py`).
+  - `LibraryBook` 모델 및 응답 DTO(`UpdateProgressResponse`, `LibraryBookDetailResponse`, `LibraryBookItemResponse`, `UpdateLibraryBookResponse`, `CreateLibraryBookResponse`)에 `completed_at` 필드 반영.
+  - 진도율 수정(`PATCH /progress`) 및 도서 수정(`PATCH /{book_id}`) 시 `current_page == total_pages` 도달 시 `reading_status`를 `COMPLETED`로 자동 전이하고 `completed_at` 현재 시각 기록.
+  - 페이지 수 감소 시 `reading_status`를 `READING`으로 자동 복귀 및 `completed_at = None` 리셋 불변식 구현.
+- **국립중앙도서관 API 인메모리 TTL 캐싱 & Graceful Fallback (TDD)**:
+  - `NationalLibraryClient`: 정제된 ISBN 기반 인메모리 TTL 캐시(`_cache: dict[str, tuple[ExternalBook | None, float]]`) 도입 (정상 도서 24시간, 미존재 도서 1시간).
+  - 외부 타임아웃(`httpx.TimeoutException`), 네트워크 단절(`httpx.RequestError`), 외부 5xx 오류 시 500 크래시 없이 경고 로그 후 `None` 반환 및 검색 API 200 OK + `book: None` graceful fallback 보장.
+- **테스트 및 코드 품질**:
+  - TDD 신규 단위/통합 테스트 7건 추가 (`tests/test_books.py` 4건, `tests/test_search.py` 3건).
+  - 총 58개 테스트 100% 통과 (소요시간 1.34s) 및 `ruff check`, `ruff format`, `mypy app` 검증 완료.
+
+**다음 세션 시작 시**:
+1. 실환경 Render Web Service 컨테이너 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
+2. `backend-ai-agent` 서비스와의 Function Calling 연동 테스트.
+
+
 

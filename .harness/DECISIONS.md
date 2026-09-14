@@ -4,6 +4,7 @@
 
 | 날짜 | 결정 | 이유 / 대안 비교 |
 | :--- | :--- | :--- |
+| 2026-09-14 | 독서 진도율 100% 도달 시 COMPLETED 자동 전이 및 completed_at 기록, 국립중앙도서관 API 인메모리 TTL 캐싱(24h/1h) 및 Graceful Fallback 도입 | 진도율 100%임에도 수동으로 완독 상태를 변경해야 하던 UX 불편 및 완독 일시 미기록 문제 해소, 국립중앙도서관 외부 API 장애/타임아웃 시 사용자 검색 전체가 500 에러로 실패하는 취약점을 방지하고 반복 요청 외부 쿼터 절약 |
 | 2026-09-14 | backend-auth 서비스를 backend-core-api로 병합 및 Google/Kakao 소셜 로그인 기반 자체 JWT 발급 체계로 전환 | Render 무료 티어(월 750시간) 인스턴스 소진 방지(백엔드 3개 10일 한계 -> 2개 15일 확보), AWS Cognito 종속성 완전 제거, httpx 기반 Google/Kakao 토큰 검증 및 자체 JWT 발급으로 구현 간소화, 회원 탈퇴 시 서재/기록 데이터 단일 트랜잭션 안전 삭제 보장 |
 | 2026-09-13 | AWS Cognito 완전 배제 및 범용 Auth 서비스(Google OAuth 기반) JWT 연동 구조로 전환 | AWS 벤더 락인 해제 및 $0 무과금 아키텍처 실현. Core API는 Cognito 특정 클레임 종속성을 제거하고 표준 Bearer JWT(`sub`/`member_id` UUID 추출 및 유연한 서명 검증) 구조로 전환하여 독립성 확보 |
 | 2026-09-12 | DPYB 바이브 코딩 하네스 표준 체계 도입 (`AGENTS.md`, `CLAUDE.md`, `.kiro/`, `.harness/`) | 여러 AI 코딩 툴(AGY, Claude Code, Codex, Kiro) 및 작업자 교체 시에도 동일한 컨텍스트와 워크플로우를 강제하고 문서 간 정보 중복/불일치 방지 |

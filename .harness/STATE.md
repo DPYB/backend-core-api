@@ -15,4 +15,5 @@
 - **Phase 10 (develop 브랜치 분할 커밋 & 원격 푸시)**: DPYB 커밋 규격(`타입[적용범위]: 요약`) 준수 8단계 원자적 분할 커밋 및 `origin/develop` 브랜치 푸시 완료
 - **Phase 11 (실환경 Supabase 마이그레이션 적용)**: Supabase 서울 리전 실제 DB 인스턴스 연동, 특수문자 대응 개별 DB 환경변수 지원, Alembic 마이그레이션 성공(`core`, `record` 스키마 및 8개 테이블/시드 데이터 생성 검증) 완료
 - **Phase 12 (backend-auth 병합 & 소셜 로그인 통합)**: AWS Cognito 종속성 완전 제거, `member` 스키마(회원, 약관, 약관동의) DDL 및 Alembic `003_add_member_schema` 적용, Google/Kakao 소셜 로그인 및 자체 Bearer JWT 발급/갱신, 프로필 조회/수정 및 회원 탈퇴 시 서재·도서·독서기록·사서 Cascade 일괄 소프트 삭제 구현 완료 (총 50개 테스트 100% Pass)
+- **Phase 13 (독서 진도율 자동 동기화 & 국립중앙도서관 캐싱/내결함성)**: 독서 진도율 100% 도달 시 COMPLETED 자동 전이 및 완독일시(`completed_at`) 자동 기록/리셋 로직(Alembic `004_add_completed_at_to_library_book`), 국립중앙도서관 API 인메모리 TTL 캐싱(24h/1h) 및 외부 타임아웃/장애 Graceful Fallback 구축 완료 (총 58개 테스트 100% Pass)
 
