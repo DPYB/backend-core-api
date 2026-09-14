@@ -68,8 +68,11 @@ async def search_book_by_isbn(
             book=None,
         )
 
-    # 2. 미등록 도서인 경우 국립중앙도서관 API 조회
-    external_book = await client.lookup_by_isbn(clean_isbn)
+    # 2. 미등록 도서인 경우 국립중앙도서관 API 조회 (장애/타임아웃 시 graceful fallback)
+    try:
+        external_book = await client.lookup_by_isbn(clean_isbn)
+    except Exception:
+        external_book = None
 
     return BookSearchResponse(
         already_registered=False,
