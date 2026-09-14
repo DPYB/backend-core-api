@@ -119,7 +119,9 @@ def upgrade() -> None:
             FOR EACH ROW
             EXECUTE FUNCTION member.update_updated_at_column();
     """)
-    op.execute("DROP TRIGGER IF EXISTS trg_member_agreements_updated_at ON member.member_agreements;")
+    op.execute(
+        "DROP TRIGGER IF EXISTS trg_member_agreements_updated_at ON member.member_agreements;"
+    )
     op.execute("""
         CREATE TRIGGER trg_member_agreements_updated_at
             BEFORE UPDATE ON member.member_agreements
