@@ -10,16 +10,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 os.environ["ENV"] = "test"
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///:memory:"
 os.environ["AUTH_DISABLED"] = "false"
+os.environ["JWT_SECRET_KEY"] = "test-secret-key-12345678901234567890"
 
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 
-# SQLite 인메모리 테스트 엔진 (schema_translate_map으로 core 스키마 투명 변환)
+# SQLite 인메모리 테스트 엔진 (schema_translate_map으로 core, record, member 스키마 투명 변환)
 test_engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:",
     echo=False,
-    execution_options={"schema_translate_map": {"core": None, "record": None}},
+    execution_options={
+        "schema_translate_map": {"core": None, "record": None, "member": None}
+    },
 )
 
 TestSessionLocal = async_sessionmaker(
