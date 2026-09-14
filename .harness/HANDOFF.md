@@ -61,8 +61,26 @@
 - **클라우드 Supabase DB 마이그레이션 전수 검증**:
   - `alembic upgrade head` 성공: `core` 스키마 6종 테이블, `record` 스키마 2종 테이블, 사서 4종 초기 시드 데이터 정상 적재 확인.
 
+## 2026-09-14: backend-auth 병합 및 Google/Kakao 소셜 로그인 통합 ($0 인프라 최적화)
+- **AWS Cognito 완전 걷어내기 및 서비스 병합**:
+  - `backend-auth`의 무거운 AWS 의존성(boto3, SRP, Cognito 오류 매핑 약 1,500줄)을 배제하고, 순수 회원 도메인과 소셜 로그인 모듈을 `backend-core-api`로 일원화.
+  - Render 무료 티어(월 750시간) 인스턴스 3개 동시 가동 시 10일 만에 소진되던 한계를 극복하기 위해 백엔드를 2개(`core+auth`, `ai-agent`)로 압축하여 15~16일 무료 가동 시간 확보.
+- **스키마 및 Alembic 마이그레이션 (`003_add_member_schema.py`)**:
+  - `member` 스키마 신설: `member.members`, `member.terms`, `member.member_agreements` 테이블 및 트리거, 인덱스 구축.
+  - 기본 약관 3종(`TERMS_OF_SERVICE`, `PRIVACY`, `AI_ANALYSIS`) baseline seed 데이터 적재.
+  - 실환경 Supabase DB에 `alembic upgrade head` 성공 반영 (`003_add_member_schema (head)`).
+- **소셜 로그인 및 자체 JWT 토큰 체계**:
+  - `SocialAuthService`: `httpx` 비동기 클라이언트로 Google `id_token` (tokeninfo API) 및 Kakao `access_token` (/v2/user/me API) 검증 구현.
+  - `security.py`: 자체 HS256 Bearer JWT 발급(`create_access_token`, `create_refresh_token`) 및 갱신/검증 구현.
+  - `MemberService`: 소셜 로그인 시 신규 회원 자동 가입(Get-or-Create) + 기본 책장(`Default Shelf`) 자동 생성 보장.
+  - 회원 탈퇴(`DELETE /api/v1/users/me`) 시 서재 책장, 도서, 스크랩, 독서기록, 사서 데이터를 단일 트랜잭션에서 일괄 소프트 삭제하는 전사 Cascade 처리 구현.
+- **테스트 및 검증**:
+  - 신규 소셜 로그인, 토큰 갱신, 중복 확인, 프로필 조회/수정, 탈퇴 Cascade, 약관 동의/철회 테스트 6건 추가.
+  - 총 50개 테스트 100% 통과 및 `ruff check`, `ruff format`, `mypy` 검증 완료.
+
 **다음 세션 시작 시**:
-1. Render Web Service 컨테이너 배포 및 환경변수 등록 (`DB_USER`, `DB_PASSWORD` 등).
+1. Render Web Service 컨테이너 배포 및 환경변수 등록 (`DB_USER`, `DB_PASSWORD`, `JWT_SECRET_KEY`, `CORS_ORIGINS` 등).
 2. 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
 3. `backend-ai-agent` 서버와의 사서/토론 모드 Function Calling(Tool) 연동 테스트 진행.
+
 

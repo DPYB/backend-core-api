@@ -26,8 +26,12 @@ class Settings(BaseSettings):
 
     # Authentication (Auth Server & OAuth JWT)
     AUTH_DISABLED: bool = False
-    JWT_SECRET_KEY: str | None = None
+    JWT_SECRET_KEY: str = "dont-paw-get-jwt-secret-change-in-prod-2026"
     JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    GOOGLE_CLIENT_ID: str | None = None
+    KAKAO_CLIENT_ID: str | None = None
 
     # External APIs
     NL_API_CERT_KEY: str | None = None

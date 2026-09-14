@@ -14,4 +14,5 @@
 - **Phase 9 (중앙 Reusable CI & 개발 표준 최신화)**: Reusable 워크플로우 2종(`ci.yml`, `lint-pr.yml`) 연동, 개별 keep-alive 워크플로우 삭제, /health SELECT 1 보장 확인, 최신 개발 표준(feat/* 단일화, [scope] 대괄호 규격, 인간 직접 머지 원칙, 독서기록 RDBMS 영속화 core-api 전담 소유) 하네스 문서 전면 동기화 완료
 - **Phase 10 (develop 브랜치 분할 커밋 & 원격 푸시)**: DPYB 커밋 규격(`타입[적용범위]: 요약`) 준수 8단계 원자적 분할 커밋 및 `origin/develop` 브랜치 푸시 완료
 - **Phase 11 (실환경 Supabase 마이그레이션 적용)**: Supabase 서울 리전 실제 DB 인스턴스 연동, 특수문자 대응 개별 DB 환경변수 지원, Alembic 마이그레이션 성공(`core`, `record` 스키마 및 8개 테이블/시드 데이터 생성 검증) 완료
+- **Phase 12 (backend-auth 병합 & 소셜 로그인 통합)**: AWS Cognito 종속성 완전 제거, `member` 스키마(회원, 약관, 약관동의) DDL 및 Alembic `003_add_member_schema` 적용, Google/Kakao 소셜 로그인 및 자체 Bearer JWT 발급/갱신, 프로필 조회/수정 및 회원 탈퇴 시 서재·도서·독서기록·사서 Cascade 일괄 소프트 삭제 구현 완료 (총 50개 테스트 100% Pass)
 
