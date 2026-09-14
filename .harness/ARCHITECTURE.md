@@ -20,23 +20,23 @@ backend-core-api/
 ├── .kiro/steering/project.md   # Kiro용 얇은 어댑터
 ├── .harness/                   # 하네스 상태 및 히스토리 문서 6종
 ├── .github/workflows/          # GitHub Actions (ci.yml, lint-pr.yml - 중앙 Reusable 호출)
-├── alembic/                    # DB 마이그레이션 스크립트 (core, record 스키마)
+├── alembic/                    # DB 마이그레이션 스크립트 (core, record, member 스키마)
 ├── app/
 │   ├── main.py                 # FastAPI 앱 팩토리, CORS 미들웨어, 라우터 등록
-│   ├── config.py               # Pydantic BaseSettings 환경설정
+│   ├── config.py               # Pydantic BaseSettings 환경설정 (DB, JWT, 외부API)
 │   ├── core/
 │   │   ├── exceptions.py       # 18종 표준 App Exception 및 Global Exception Handler
-│   │   ├── security.py         # Cognito Access Token 디코딩 및 member_id(UUID) 추출
+│   │   ├── security.py         # 자체 JWT 발급/갱신(HS256) 및 Bearer 토큰 member_id(UUID) 검증
 │   │   ├── shelf_rank.py       # 62진수 LexoRank 순서 정렬 및 rebalance 알고리즘
 │   │   └── kdc_mapper.py       # KDC 대분류 변환 및 한글 장르 라벨 매퍼
 │   ├── db/
 │   │   ├── base.py             # Base DeclarativeBase, BigIntPK (SQLite 호환)
 │   │   └── session.py          # asyncpg 엔진(statement_cache_size=0) 및 get_db 의존성
-│   ├── models/                 # SQLAlchemy ORM 엔티티 (Shelf, LibraryBook, Scrap, Librarian, Record)
-│   ├── schemas/                # Pydantic DTO 스키마 (Shelf, LibraryBook, Scrap, Librarian, Record)
-│   ├── services/               # 도메인 비즈니스 서비스 계층
-│   └── routers/                # API 엔드포인트 라우터 계층 (books, shelves, scraps, librarians, records, health)
-├── tests/                      # pytest 비동기 단위 및 통합 테스트 슈트
+│   ├── models/                 # SQLAlchemy ORM 엔티티 (Shelf, LibraryBook, Scrap, Librarian, Record, Member, Terms)
+│   ├── schemas/                # Pydantic DTO 스키마 (Shelf, LibraryBook, Scrap, Librarian, Record, Auth, Member, Terms)
+│   ├── services/               # 비즈니스 서비스 계층 (MemberService, SocialAuthService, TermsService 등)
+│   └── routers/                # API 엔드포인트 라우터 계층 (auth, users, terms, books, shelves, scraps, librarians, records, health)
+├── tests/                      # pytest 비동기 단위 및 통합 테스트 슈트 (50개)
 ├── Dockerfile                  # Render / Cloud Run / 로컬 공용 멀티스테이지 컨테이너
 ├── docker-compose.yml          # 로컬 핫리로드 개발 환경
 ├── pyproject.toml / requirements.txt
@@ -48,21 +48,25 @@ backend-core-api/
 MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안에서 구현하기 위해 **PostgreSQL 스키마(Schema) 분리**를 적용합니다:
 - **`core` 스키마**: 서재 책장(`shelf`), 서재 도서(`library_book`), 도서 문장 스크랩(`scrap`), 사서 마스터(`librarian_type_info`), 사서 레벨(`librarian_level`), 회원 소유 사서(`librarian`) 소유.
 - **`record` 스키마**: 독서 감상 기록(`records`), 독서록 문장 스크랩(`scraps`) 소유.
-- **독서 기록 데이터 영속화 단일 소유권(SSOT)**: 독서 기록 및 독서록 스크랩의 모든 RDBMS 영속화와 CRUD 비즈니스 로직은 본 레포지토리(`backend-core-api`)가 독점 소유합니다. AI 에이전트 서비스(`backend-ai-agent`)는 직접 PostgreSQL을 다루지 않고 벡터 검색 및 대화 추론에 집중하며, 필요 시 본 API를 호출합니다.
+- **`member` 스키마**: 회원 프로필(`members`), 약관 마스터(`terms`), 약관 동의/철회 이력(`member_agreements`) 소유.
+- **독서 기록 및 회원 데이터 영속화 단일 소유권(SSOT)**: 회원 인증/프로필, 독서 감상 기록 및 서재 도메인의 모든 RDBMS 영속화와 CRUD 비즈니스 로직을 본 레포지토리(`backend-core-api`)가 독점 소유합니다. AI 에이전트 서비스(`backend-ai-agent`)는 직접 PostgreSQL을 다루지 않고 벡터 검색 및 대화 추론에 집중하며, 필요 시 본 API를 호출합니다.
 - **연결 옵션**: `search_path=core` 적용 및 트랜잭션 풀러(6543) 충돌 방지 `statement_cache_size=0`.
-- **타 서비스와의 연계**: Member 서비스(`member` 테이블)와의 물리적 외래키를 두지 않고, 오직 `member_id UUID`를 논리적 식별자로 사용하여 독립성을 유지합니다.
 
 ## 4. 핵심 도메인 불변식
 
-1. **LexoRank (`ShelfRank`)**: 책장 내 도서 순서는 62진수 문자열로 저장되며, 이웃 도서 간 중간값(`between`)을 계산해 순서를 부여합니다. 키 공간 소진 시 자동으로 전체 책장 도서를 균등 재분배(`rebalanced_sequence`)합니다.
-2. **KDC 장르 및 화면 표시용 한글 라벨**: KDC 10대 대분류 ENUM(`genre`)을 저장하고, 프론트 표시용 `genreName`("문학", "기술과학" 등)은 DB 중복 저장 없이 Pydantic `@computed_field`로 동적 계산하여 응답합니다.
-3. **기본 책장(Default Shelf) 보장**: 회원당 활성 기본 책장은 반드시 1개 존재(`is_default=true`)하며 삭제할 수 없습니다. 커스텀 책장 삭제 시 내부에 있던 도서들은 모두 기본 책장의 맨 뒤로 자동 이동합니다.
-4. **소프트 삭제 및 캐스케이드**: 도서(`library_book`) 또는 독서 기록(`records`) 삭제 시, 소속된 스크랩(`scrap`, `scraps`)들도 동일 트랜잭션에서 함께 소프트 삭제(`deleted_at = now()`)됩니다.
-5. **사서 단일 대표성**: 회원은 타입당 1마리만 보유할 수 있으며, 활성 대표 사서는 회원당 최대 1마리로 유지됩니다.
+1. **소셜 로그인 & 회원 자동 가입(Get-or-Create)**: Google `id_token` 또는 Kakao `access_token` 검증 후 회원 신규 가입 시 기본 책장(`Default Shelf`) 및 초기 대표 사서(`CAT`)를 자동 생성/지급합니다.
+2. **LexoRank (`ShelfRank`)**: 책장 내 도서 순서는 62진수 문자열로 저장되며, 이웃 도서 간 중간값(`between`)을 계산해 순서를 부여합니다. 키 공간 소진 시 자동으로 전체 책장 도서를 균등 재분배(`rebalanced_sequence`)합니다.
+3. **KDC 장르 및 화면 표시용 한글 라벨**: KDC 10대 대분류 ENUM(`genre`)을 저장하고, 프론트 표시용 `genreName`("문학", "기술과학" 등)은 DB 중복 저장 없이 Pydantic `@computed_field`로 동적 계산하여 응답합니다.
+4. **기본 책장(Default Shelf) 보장**: 회원당 활성 기본 책장은 반드시 1개 존재(`is_default=true`)하며 삭제할 수 없습니다. 커스텀 책장 삭제 시 내부에 있던 도서들은 모두 기본 책장의 맨 뒤로 자동 이동합니다.
+5. **소프트 삭제 및 전사 캐스케이드(Cascade)**:
+   - 도서(`library_book`) 또는 독서 기록(`records`) 삭제 시, 소속된 스크랩(`scrap`, `scraps`)들도 동일 트랜잭션에서 함께 소프트 삭제(`deleted_at = now()`)됩니다.
+   - 회원 탈퇴(`DELETE /api/v1/users/me`) 시, 회원의 서재 책장, 도서, 스크랩, 독서기록, 사서 데이터가 단일 트랜잭션에서 일괄 소프트 삭제 처리됩니다.
+6. **사서 단일 대표성**: 회원은 타입당 1마리만 보유할 수 있으며, 활성 대표 사서는 회원당 최대 1마리로 유지됩니다.
 
 ## 5. API 계약 및 보안 컨벤션
 
-- **인증 헤더**: `Authorization: Bearer <jwt_access_token>` (Auth Service / Google OAuth 연계, `sub` UUID 식별자 추출. 일부 독서 기록 엔드포인트는 `X-Member-Id` 헤더 병행 지원).
+- **소셜 로그인 및 토큰 계약**: `POST /api/v1/auth/social/{google|kakao}`를 통해 자체 Bearer JWT Access Token 및 Refresh Token 발급.
+- **인증 헤더**: `Authorization: Bearer <jwt_access_token>` (`sub` 클레임의 member_id UUID 추출. 독서 기록 엔드포인트는 `X-Member-Id` 헤더 병행 지원).
 - **에러 응답 규격**: 모든 에러 응답은 `{"code": "ERROR_CODE", "message": "설명"}` 일관된 JSON 바디를 반환합니다.
 - **무과금 Keep-Alive**: `/health` 엔드포인트 호출 시 Supabase에 `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지합니다. 개별 크론 대신 중앙 `DPYB/.github` 레포에서 10분 주기로 일괄 핑을 수행합니다.
 
