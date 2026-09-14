@@ -100,5 +100,14 @@
 1. 실환경 Render Web Service 컨테이너 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
 2. `backend-ai-agent` 서비스와의 Function Calling 연동 테스트.
 
+## 2026-09-14: DPYB 조직 PR 템플릿 미니멀 Type B 다이어트 및 완전 중앙화
+- **공통 PR 템플릿 다이어트 (`DPYB/.github`)**:
+  - 기존 7개 섹션(스크린샷, 분절된 개요, 6개 체크박스)의 과도한 템플릿을 **Type B 3섹션 구조**(작업 요약, 적용 범위, 필수 체크리스트 2개)로 슬림화.
+  - 백엔드 불필요 요소(스크린샷) 및 CI 자동 검증 중복 항목(린트/테스트 수동 체크) 제거, `Closes #` 자동 이슈 닫기 보존.
+  - `DPYB/.github` 메인 브랜치에 커밋 및 원격 푸시 완료.
+- **전사 3개 레포(`frontend-reader-web`, `backend-core-api`, `backend-ai-agent`) 완전 중앙화 상속**:
+  - `backend-core-api` 내 기존 중복 파일(`.github/pull_request_template.md`)을 `git rm`으로 삭제 및 `origin/develop`에 푸시.
+  - DPYB 조직 내 3개 전체 레포가 `DPYB/.github`의 공통 템플릿을 자동으로 참조하도록 단일 진실 공급원(SSOT) 확립 완료 (`gh api repos/.../community/profile` 검증 완료).
+
 
 
