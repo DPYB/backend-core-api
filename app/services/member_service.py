@@ -75,6 +75,9 @@ class MemberService:
         # 기본 책장 자동 생성 보장
         await ShelfService.get_or_create_default_shelf(db, new_member_id)
 
+        # 기본 대표 사서(CAT) 자동 지급
+        await MemberService._ensure_default_cat_librarian(db, new_member_id)
+
         # 전달받은 약관 동의 목록 등록
         if agreed_terms_ids:
             for tid in agreed_terms_ids:
@@ -88,6 +91,77 @@ class MemberService:
         await db.commit()
         await db.refresh(new_member)
         return new_member, True
+
+    @staticmethod
+    async def get_or_create_dev_member(
+        db: AsyncSession,
+        email: str,
+    ) -> tuple[Member, bool]:
+        """
+        로컬 개발 및 프론트 연동용 테스트 회원을 조회하거나, 없으면 신규 가입(Get-or-Create)합니다.
+        신규 가입 시 기본 책장 및 기본 대표 고양이 사서(CAT)를 자동 생성/지급합니다.
+        반환: (Member, is_new: bool)
+        """
+        clean_email = email.strip().lower()
+        stmt = select(Member).where(
+            Member.email == clean_email,
+            Member.deleted_at.is_(None),
+        )
+        res = await db.execute(stmt)
+        member = res.scalars().first()
+
+        if member:
+            return member, False
+
+        # 신규 회원 생성
+        nickname = clean_email.split("@")[0][:50] or "reader"
+        new_member_id = uuid.uuid4()
+        new_member = Member(
+            member_id=new_member_id,
+            email=clean_email,
+            nickname=nickname,
+            profile_image_url=None,
+            status="ACTIVE",
+            provider="LOCAL",
+            provider_id=clean_email,
+        )
+        db.add(new_member)
+        await db.flush()
+
+        # 기본 책장 자동 생성
+        await ShelfService.get_or_create_default_shelf(db, new_member_id)
+
+        # 기본 대표 사서(CAT) 자동 생성
+        await MemberService._ensure_default_cat_librarian(db, new_member_id)
+
+        await db.commit()
+        await db.refresh(new_member)
+        return new_member, True
+
+    @staticmethod
+    async def _ensure_default_cat_librarian(
+        db: AsyncSession, member_id: uuid.UUID
+    ) -> None:
+        """신규 회원에게 기본 대표 고양이 사서(CAT)를 지급합니다."""
+        from app.models.enums import LibrarianType
+        from app.services.librarian_service import LibrarianService
+
+        await LibrarianService.ensure_seed_data(db)
+        lib_stmt = select(Librarian).where(
+            Librarian.member_id == member_id,
+            Librarian.deleted_at.is_(None),
+        )
+        existing = (await db.execute(lib_stmt)).scalars().first()
+        if not existing:
+            cat = Librarian(
+                member_id=member_id,
+                type=LibrarianType.CAT,
+                name="블루",
+                level=1,
+                experience=0,
+                is_representative=True,
+            )
+            db.add(cat)
 
     @staticmethod
     async def get_member_by_id(db: AsyncSession, member_id: uuid.UUID) -> Member:
@@ -105,11 +179,8 @@ class MemberService:
         return member
 
     @staticmethod
-    async def get_profile(
-        db: AsyncSession, member_id: uuid.UUID
-    ) -> MemberProfileResponse:
-        """회원 본인 프로필을 조회합니다."""
-        member = await MemberService.get_member_by_id(db, member_id)
+    def to_profile_response(member: Member) -> MemberProfileResponse:
+        """Member 모델을 MemberProfileResponse DTO로 변환합니다."""
         return MemberProfileResponse(
             member_id=str(member.member_id),
             email=member.email,
@@ -121,6 +192,14 @@ class MemberService:
             provider=member.provider,
             created_at=member.created_at,
         )
+
+    @staticmethod
+    async def get_profile(
+        db: AsyncSession, member_id: uuid.UUID
+    ) -> MemberProfileResponse:
+        """회원 본인 프로필을 조회합니다."""
+        member = await MemberService.get_member_by_id(db, member_id)
+        return MemberService.to_profile_response(member)
 
     @staticmethod
     async def update_profile(

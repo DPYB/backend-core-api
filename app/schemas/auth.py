@@ -1,6 +1,7 @@
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from app.schemas.common import CamelModel
+from app.schemas.member import MemberProfileResponse
 
 
 class SocialLoginRequest(CamelModel):
@@ -24,12 +25,35 @@ class TokenResponse(CamelModel):
     member_id: str
     is_new_member: bool
 
+    @computed_field(alias="access_token")  # type: ignore[prop-decorator]
+    @property
+    def access_token_snake(self) -> str:
+        return self.access_token
+
+    @computed_field(alias="refresh_token")  # type: ignore[prop-decorator]
+    @property
+    def refresh_token_snake(self) -> str:
+        return self.refresh_token
+
+
+class LoginRequest(CamelModel):
+    """이메일/비밀번호 로그인 요청 (프론트엔드 및 개발/테스트 호환)"""
+
+    email: str = Field(..., min_length=1, description="이메일 주소")
+    password: str = Field(default="", description="비밀번호 (개발용 임의값)")
+
+
+class LoginResponse(TokenResponse):
+    """로그인 응답 (토큰 + 회원 프로필 정보)"""
+
+    member: MemberProfileResponse | None = None
+
 
 class RefreshTokenRequest(CamelModel):
-    """토큰 갱신 요청"""
+    """토큰 갱신 요청 (바디 또는 쿠키로 전달)"""
 
-    refresh_token: str = Field(
-        ..., min_length=1, description="기존 발급받은 Refresh Token"
+    refresh_token: str | None = Field(
+        default=None, description="기존 발급받은 Refresh Token"
     )
 
 
