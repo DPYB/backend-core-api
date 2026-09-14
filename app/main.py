@@ -8,6 +8,7 @@ from app.core.exceptions import register_exception_handlers
 from app.db.base import Base
 from app.db.session import engine
 from app.routers import (
+    auth_router,
     books_router,
     health_router,
     librarians_router,
@@ -15,6 +16,8 @@ from app.routers import (
     scraps_router,
     search_router,
     shelves_router,
+    terms_router,
+    users_router,
 )
 
 
@@ -31,8 +34,8 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     app = FastAPI(
         title="backend-core-api",
-        description="FastAPI Core API Service for Virtual Shelf, Library Books, Scraps & Librarians",
-        version="0.1.0",
+        description="FastAPI Core API Service for Auth, Member, Virtual Shelf, Library Books, Scraps & Librarians",
+        version="0.2.0",
         lifespan=lifespan,
     )
 
@@ -51,6 +54,9 @@ def create_app() -> FastAPI:
 
     # 라우터 등록
     app.include_router(health_router)
+    app.include_router(auth_router)
+    app.include_router(users_router)
+    app.include_router(terms_router)
     app.include_router(search_router)
     app.include_router(shelves_router)
     app.include_router(books_router)

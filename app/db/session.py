@@ -17,9 +17,9 @@ if "asyncpg" in settings.DATABASE_URL:
         "prepared_statement_cache_size": 0,
     }
 elif "sqlite" in settings.DATABASE_URL:
-    # SQLite 인메모리 테스트 시 core 및 record 스키마를 기본 스키마로 투명 매핑
+    # SQLite 인메모리 테스트 시 core, record, member 스키마를 기본 스키마로 투명 매핑
     engine_kwargs["execution_options"] = {
-        "schema_translate_map": {"core": None, "record": None}
+        "schema_translate_map": {"core": None, "record": None, "member": None}
     }
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)

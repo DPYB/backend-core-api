@@ -42,10 +42,11 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection: Connection) -> None:
-    # alembic_version 테이블이 core 스키마에 생성되므로 core 및 record 스키마 선행 보장 및 커밋
+    # alembic_version 테이블이 core 스키마에 생성되므로 core, record, member 스키마 선행 보장 및 커밋
     with connection.begin():
         connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS core;"))
         connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS record;"))
+        connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS member;"))
 
     context.configure(
         connection=connection,
