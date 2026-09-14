@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
+from app.models.librarian import Librarian
 from app.models.library_book import LibraryBook
 from app.models.member import Member
 from app.models.record import Record
@@ -263,3 +264,100 @@ async def test_profile_and_withdrawal_cascade(
         select(Record).where(Record.member_id == member_id)
     )
     assert res_r.scalars().first().deleted_at is not None
+
+
+@pytest.mark.asyncio
+async def test_dev_login_auto_signup_and_cookie(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """개발/프론트 호환 로그인 시 자동 가입, 기본책장/고양이 사서 지급 및 쿠키 발급 검증"""
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "frontend_dev@example.com", "password": "anypassword"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # snake_case 및 camelCase 듀얼 지원 확인
+    assert data["accessToken"] is not None
+    assert data["access_token"] == data["accessToken"]
+    assert data["refreshToken"] is not None
+    assert data["refresh_token"] == data["refreshToken"]
+    assert data["tokenType"] == "Bearer"
+    assert data["isNewMember"] is True
+
+    # member 프로필 필드 포함 확인 (프론트 AuthProvider 연동)
+    assert "member" in data
+    assert data["member"]["email"] == "frontend_dev@example.com"
+    assert data["member"]["nickname"] == "frontend_dev"
+
+    # Set-Cookie 헤더에 refresh_token 포함 확인
+    assert "set-cookie" in resp.headers
+    assert "refresh_token=" in resp.headers["set-cookie"]
+    assert "HttpOnly" in resp.headers["set-cookie"]
+
+    member_id = uuid.UUID(data["memberId"])
+
+    # DB 검증: 기본 책장 생성 확인
+    stmt_shelf = select(Shelf).where(
+        Shelf.member_id == member_id, Shelf.is_default.is_(True)
+    )
+    shelf = (await db_session.execute(stmt_shelf)).scalars().first()
+    assert shelf is not None
+    assert shelf.is_default is True
+
+    # DB 검증: 기본 대표 고양이 사서(CAT) 자동 생성 확인
+    stmt_lib = select(Librarian).where(
+        Librarian.member_id == member_id, Librarian.is_representative.is_(True)
+    )
+    lib = (await db_session.execute(stmt_lib)).scalars().first()
+    assert lib is not None
+    assert lib.name == "블루"
+    assert lib.level == 1
+
+    # 동일 이메일 재로그인 시 기존 회원 조회 (isNewMember = False)
+    resp2 = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "frontend_dev@example.com", "password": "anypassword"},
+    )
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert data2["isNewMember"] is False
+    assert data2["memberId"] == str(member_id)
+
+
+@pytest.mark.asyncio
+async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSession):
+    """쿠키(HttpOnly)로 전달된 refresh_token을 이용한 세션 갱신 검증"""
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "cookie_user@example.com"},
+    )
+    refresh_token = login_resp.json()["refreshToken"]
+
+    # 바디 없이 쿠키 헤더만 전송하여 refresh 호출
+    headers = {"Cookie": f"refresh_token={refresh_token}"}
+    refresh_resp = await client.post(
+        "/api/v1/auth/refresh",
+        headers=headers,
+    )
+    assert refresh_resp.status_code == 200
+    data = refresh_resp.json()
+    assert "accessToken" in data
+    assert "access_token" in data
+    assert data["accessToken"] is not None
+    # 새 refresh 쿠키 재발급 확인
+    assert "set-cookie" in refresh_resp.headers
+    assert "refresh_token=" in refresh_resp.headers["set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_logout_removes_refresh_cookie(client: AsyncClient):
+    """로그아웃 호출 시 refresh_token 쿠키가 만료/삭제되는지 검증"""
+    resp = await client.post("/api/v1/auth/logout")
+    assert resp.status_code == 204
+    assert "set-cookie" in resp.headers
+    assert (
+        'refresh_token=""' in resp.headers["set-cookie"]
+        or "Max-Age=0" in resp.headers["set-cookie"]
+    )
