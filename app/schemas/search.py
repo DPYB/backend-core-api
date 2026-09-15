@@ -22,6 +22,12 @@ class ExternalBook(CamelModel):
     def genre_name(self) -> str:
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
+    @computed_field
+    @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
+
 
 class SearchLibraryBookDetail(CamelModel):
     book_id: int
@@ -44,6 +50,12 @@ class SearchLibraryBookDetail(CamelModel):
     @property
     def genre_name(self) -> str:
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
+
+    @computed_field
+    @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
 
     @computed_field
     @property

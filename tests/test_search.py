@@ -213,3 +213,58 @@ async def test_national_library_timeout_graceful_fallback(client: AsyncClient):
         data = api_resp.json()
         assert data["alreadyRegistered"] is False
         assert data["book"] is None
+
+
+@pytest.mark.asyncio
+async def test_national_library_kyobo_cdn_fallback():
+    from unittest.mock import MagicMock
+
+    from app.services.national_library import (
+        NationalLibraryClient,
+        get_verified_cover_url,
+    )
+
+    # 1. get_verified_cover_url 단위 테스트
+    official = "https://www.nl.go.kr/image/sample.jpg"
+    assert get_verified_cover_url(official, "9791190090018") == official
+    assert (
+        get_verified_cover_url("", "9791190090018")
+        == "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791190090018.jpg"
+    )
+    assert (
+        get_verified_cover_url(None, "979-11-90090-01-8")
+        == "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791190090018.jpg"
+    )
+    assert get_verified_cover_url(None, None) is None
+
+    # 2. lookup_by_isbn 통합 시 표지 누락 도서에 교보 CDN 자동 주입 테스트
+    client = NationalLibraryClient(cert_key="test-key")
+    client.clear_cache()
+
+    mock_resp_data = {
+        "TOTAL_COUNT": "1",
+        "docs": [
+            {
+                "TITLE": "우리가 빛의 속도로 갈 수 없다면",
+                "AUTHOR": "김초엽",
+                "EA_ISBN": "9791190090018",
+                "KDC": "813.7",
+                "TITLE_URL": "",  # 도서관 표지 누락 상황
+            }
+        ],
+    }
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = mock_resp_data
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        book = await client.lookup_by_isbn("9791190090018")
+        assert book is not None
+        assert book.cover_url is not None
+        assert "kyobobook.co.kr" in book.cover_url
+        assert book.subject == "SF/과학소설"
+        assert book.display_genre == "SF/과학소설"
+        assert book.genre == GenreType.LITERATURE
+        assert book.genre_name == "문학"

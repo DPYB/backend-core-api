@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 import httpx
@@ -6,12 +7,30 @@ import httpx
 from app.config import settings
 from app.core.kdc_mapper import (
     kdc_to_genre,
+    kdc_to_subject,
     parse_page_number,
     parse_publish_date,
 )
 from app.schemas.search import ExternalBook
 
 logger = logging.getLogger(__name__)
+
+
+def get_verified_cover_url(cover_url: str | None, isbn: str | None) -> str | None:
+    """
+    도서 표지 이미지 URL 검증 및 교보문고 고화질 CDN 0ms 즉시 폴백.
+    1. 국립중앙도서관 공식 표지 URL이 존재하면 우선 사용.
+    2. 누락된 경우 10자리/13자리 정제된 ISBN을 기반으로 교보문고 CDN 이미지 URL 자동 생성.
+    """
+    clean_url = (cover_url or "").strip()
+    if clean_url and clean_url.startswith(("http://", "https://")):
+        return clean_url
+
+    clean_isbn = re.sub(r"[^0-9X]", "", (isbn or "").strip())
+    if clean_isbn and len(clean_isbn) in (10, 13):
+        return f"https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/{clean_isbn}.jpg"
+
+    return None
 
 
 class NationalLibraryClient:
@@ -32,6 +51,7 @@ class NationalLibraryClient:
         국립중앙도서관 서지정보 API를 호출하여 단건 도서 정보 조회.
         - 동일 ISBN 중복 조회 시 인메모리 TTL 캐시 우선 반환.
         - 도서 미존재 또는 외부 API 일시 장애/타임아웃 발생 시 Graceful Fallback (None 반환).
+        - 국립중앙도서관 표지 누락 시 교보문고 고화질 CDN으로 즉시 폴백.
         """
         clean_isbn = isbn.strip()
 
@@ -96,17 +116,29 @@ class NationalLibraryClient:
         raw_subject = item.get("SUBJECT")
         genre = kdc_to_genre(raw_kdc)
 
+        # 세부 주제(SF, 에세이, 소설, IT 등) 우선 추출 (없을 시 비숫자 raw_subject 활용)
+        inferred_subject = kdc_to_subject(raw_kdc)
+        if (
+            not inferred_subject
+            and raw_subject
+            and not str(raw_subject).strip().isdigit()
+        ):
+            inferred_subject = str(raw_subject).strip()
+
+        final_isbn = item.get("EA_ISBN") or clean_isbn
+        cover_url = get_verified_cover_url(item.get("TITLE_URL"), final_isbn)
+
         external_book = ExternalBook(
             title=item.get("TITLE", ""),
             author=item.get("AUTHOR", ""),
-            isbn=item.get("EA_ISBN") or clean_isbn,
+            isbn=final_isbn,
             genre=genre,
             kdc=raw_kdc,
-            subject=raw_subject,
+            subject=inferred_subject,
             publisher=item.get("PUBLISHER"),
             published_date=parse_publish_date(item.get("PUBLISH_PREDATE")),
             total_pages=parse_page_number(item.get("PAGE")),
-            cover_url=item.get("TITLE_URL"),
+            cover_url=cover_url,
         )
 
         # 성공 도서 캐싱

@@ -373,3 +373,71 @@ async def test_update_book_metadata_auto_sync_status_and_completed_at(
     assert revert_update.status_code == 200
     assert revert_update.json()["readingStatus"] == "READING"
     assert revert_update.json()["completedAt"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_book_flexible_genre_inputs(client: AsyncClient):
+    # 1. 한글 'SF' 장르 입력 -> 대분류 LITERATURE, 세부 주제 'SF', displayGenre 'SF'
+    resp1 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "우리가 빛의 속도로 갈 수 없다면",
+            "author": "김초엽",
+            "genre": "SF",
+        },
+    )
+    assert resp1.status_code == 201
+    d1 = resp1.json()
+    assert d1["genre"] == "LITERATURE"
+    assert d1["genreName"] == "문학"
+    assert d1["subject"] == "SF"
+    assert d1["displayGenre"] == "SF"
+
+    # 2. 한글 '에세이' 장르 입력
+    resp2 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "바람이 분다 당신이 좋다",
+            "author": "이병률",
+            "genre": "에세이",
+        },
+    )
+    assert resp2.status_code == 201
+    d2 = resp2.json()
+    assert d2["genre"] == "LITERATURE"
+    assert d2["subject"] == "에세이"
+    assert d2["displayGenre"] == "에세이"
+
+    # 3. KDC 분류기호만 주어졌을 때 세부 주제 자동 추론 ('813.7' -> 'SF/과학소설')
+    resp3 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "SF 소설집",
+            "author": "SF 작가",
+            "kdc": "813.7",
+            "genre": "LITERATURE",
+        },
+    )
+    assert resp3.status_code == 201
+    d3 = resp3.json()
+    assert d3["subject"] == "SF/과학소설"
+    assert d3["displayGenre"] == "SF/과학소설"
+
+
+@pytest.mark.asyncio
+async def test_create_book_kyobo_cdn_cover_auto_injected(client: AsyncClient):
+    # coverUrl을 보내지 않아도 정식 13자리 ISBN이 있으면 교보 CDN 자동 주입
+    resp = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "표지 자동 주입 테스트",
+            "author": "작가",
+            "isbn": "9791190090018",
+            "coverUrl": None,
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["coverUrl"] is not None
+    assert "contents.kyobobook.co.kr" in data["coverUrl"]
+    assert "9791190090018" in data["coverUrl"]

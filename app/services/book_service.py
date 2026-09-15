@@ -32,6 +32,7 @@ from app.schemas.library_book import (
     UpdateLibraryBookResponse,
     UpdateProgressResponse,
 )
+from app.services.national_library import get_verified_cover_url
 from app.services.shelf_service import ShelfService
 
 
@@ -108,6 +109,8 @@ class BookService:
         elif req.current_page > 0 and status == BookReadingStatus.PLANNED:
             status = BookReadingStatus.READING
 
+        verified_cover_url = get_verified_cover_url(req.cover_url, clean_isbn)
+
         book = LibraryBook(
             member_id=member_id,
             shelf_id=shelf_id,
@@ -120,7 +123,7 @@ class BookService:
             subject=req.subject.strip() if req.subject else None,
             publisher=req.publisher.strip() if req.publisher else None,
             published_date=req.published_date,
-            cover_url=req.cover_url,
+            cover_url=verified_cover_url,
             reading_status=status,
             total_pages=req.total_pages,
             current_page=req.current_page,
@@ -378,7 +381,7 @@ class BookService:
         book.subject = req.subject.strip() if req.subject else None
         book.publisher = req.publisher.strip() if req.publisher else None
         book.published_date = req.published_date
-        book.cover_url = req.cover_url
+        book.cover_url = get_verified_cover_url(req.cover_url, clean_isbn)
         book.reading_status = new_status
         book.total_pages = req.total_pages
 

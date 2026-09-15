@@ -3,7 +3,10 @@ from datetime import date, datetime
 from pydantic import Field, computed_field, model_validator
 
 from app.core.exceptions import InvalidReorderTargetException
-from app.core.kdc_mapper import GENRE_KOREAN_NAMES
+from app.core.kdc_mapper import (
+    GENRE_KOREAN_NAMES,
+    parse_to_genre_and_subject,
+)
 from app.models.enums import BookReadingStatus, GenreType
 from app.schemas.common import CamelModel
 
@@ -22,6 +25,21 @@ class CreateLibraryBookRequest(CamelModel):
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
     shelf_id: int | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_genre_and_subject(cls, data: object) -> object:
+        if isinstance(data, dict):
+            raw_genre = data.get("genre", GenreType.NONE)
+            raw_subject = data.get("subject")
+            raw_kdc = data.get("kdc")
+
+            parsed_genre, inferred_subject = parse_to_genre_and_subject(
+                raw_genre, current_subject=raw_subject, kdc_str=raw_kdc
+            )
+            data["genre"] = parsed_genre
+            data["subject"] = inferred_subject
+        return data
 
 
 class CreateLibraryBookResponse(CamelModel):
@@ -47,6 +65,12 @@ class CreateLibraryBookResponse(CamelModel):
     @property
     def genre_name(self) -> str:
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
+
+    @computed_field
+    @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
 
     @computed_field
     @property
@@ -78,6 +102,12 @@ class LibraryBookItemResponse(CamelModel):
     @property
     def genre_name(self) -> str:
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
+
+    @computed_field
+    @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
 
     @computed_field
     @property
@@ -114,6 +144,12 @@ class LibraryBookDetailResponse(CamelModel):
 
     @computed_field
     @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
+
+    @computed_field
+    @property
     def progress(self) -> float:
         if self.total_pages and self.total_pages > 0:
             return round((self.current_page / self.total_pages) * 100, 1)
@@ -124,7 +160,7 @@ class UpdateLibraryBookRequest(CamelModel):
     title: str = Field(..., min_length=1, max_length=200)
     author: str = Field(..., min_length=1, max_length=100)
     isbn: str | None = Field(None, max_length=13)
-    genre: GenreType
+    genre: GenreType = GenreType.NONE
     kdc: str | None = Field(None, max_length=20)
     subject: str | None = Field(None, max_length=100)
     publisher: str | None = Field(None, max_length=100)
@@ -132,6 +168,21 @@ class UpdateLibraryBookRequest(CamelModel):
     cover_url: str | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_genre_and_subject(cls, data: object) -> object:
+        if isinstance(data, dict):
+            raw_genre = data.get("genre", GenreType.NONE)
+            raw_subject = data.get("subject")
+            raw_kdc = data.get("kdc")
+
+            parsed_genre, inferred_subject = parse_to_genre_and_subject(
+                raw_genre, current_subject=raw_subject, kdc_str=raw_kdc
+            )
+            data["genre"] = parsed_genre
+            data["subject"] = inferred_subject
+        return data
 
 
 class UpdateLibraryBookResponse(CamelModel):
@@ -157,6 +208,12 @@ class UpdateLibraryBookResponse(CamelModel):
     @property
     def genre_name(self) -> str:
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
+
+    @computed_field
+    @property
+    def display_genre(self) -> str:
+        """사용자 화면 표시용 우선 라벨 (세부 주제 subject 우선, 없을 때 대분류 genreName)"""
+        return self.subject or self.genre_name
 
     @computed_field
     @property
