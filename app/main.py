@@ -60,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(terms_router)
+
     app.include_router(search_router)
     app.include_router(shelves_router)
     app.include_router(books_router)

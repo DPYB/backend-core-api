@@ -10,7 +10,7 @@ from app.core.exceptions import (
     LibrarianNotFoundException,
     RepresentativeLibrarianNotSelectedException,
 )
-from app.models.enums import LibrarianType
+from app.models.enums import DEFAULT_LIBRARIAN_NAMES, LIBRARIAN_METADATA, LibrarianType
 from app.models.librarian import Librarian
 from app.models.librarian_level import LibrarianLevel
 from app.models.librarian_type_info import LibrarianTypeInfo
@@ -75,14 +75,22 @@ class LibrarianService:
         stmt = select(LibrarianTypeInfo).order_by(LibrarianTypeInfo.type.asc())
         types = (await db.execute(stmt)).scalars().all()
 
-        items = [
-            LibrarianTypeItemResponse(
-                type=t.type,
-                image_url=t.image_url,
-                clicked_image_url=t.clicked_image_url,
+        items = []
+        for t in types:
+            meta = LIBRARIAN_METADATA.get(t.type, {})
+            items.append(
+                LibrarianTypeItemResponse(
+                    type=t.type,
+                    default_name=meta.get("default_name", str(t.type)),
+                    species=meta.get("species", "알 수 없음"),
+                    mbti=meta.get("mbti", "INTJ"),
+                    genres=meta.get("genres", []),
+                    description=meta.get("description", ""),
+                    ending_style=meta.get("ending_style", ""),
+                    image_url=t.image_url,
+                    clicked_image_url=t.clicked_image_url,
+                )
             )
-            for t in types
-        ]
         return LibrarianTypeListResponse(types=items)
 
     @staticmethod
@@ -101,11 +109,18 @@ class LibrarianService:
         if dup:
             raise LibrarianAlreadyOwnedException("이미 보유하고 있는 사서 종류입니다.")
 
+        # 이름이 생략되거나 공백일 경우 기본 표시명 자동 지정
+        chosen_name = (
+            req.name.strip()
+            if (req.name and req.name.strip())
+            else DEFAULT_LIBRARIAN_NAMES.get(req.type, "사서")
+        )
+
         # 2. 사서 인스턴스 생성 (초기 레벨 1, 경험치 0)
         librarian = Librarian(
             member_id=member_id,
             type=req.type,
-            name=req.name.strip(),
+            name=chosen_name,
             level=1,
             experience=0,
             is_representative=False,
@@ -139,20 +154,24 @@ class LibrarianService:
         )
         results = (await db.execute(stmt)).all()
 
-        items = [
-            LibrarianResponse(
-                librarian_id=lib.id,
-                type=lib.type,
-                name=lib.name,
-                level=lib.level,
-                experience=lib.experience,
-                is_representative=lib.is_representative,
-                image_url=info.image_url if info else None,
-                clicked_image_url=info.clicked_image_url if info else None,
-                created_at=lib.created_at,
+        items = []
+        for lib, info in results:
+            meta = LIBRARIAN_METADATA.get(lib.type, {})
+            items.append(
+                LibrarianResponse(
+                    librarian_id=lib.id,
+                    type=lib.type,
+                    name=lib.name,
+                    default_name=meta.get("default_name"),
+                    species=meta.get("species"),
+                    level=lib.level,
+                    experience=lib.experience,
+                    is_representative=lib.is_representative,
+                    image_url=info.image_url if info else None,
+                    clicked_image_url=info.clicked_image_url if info else None,
+                    created_at=lib.created_at,
+                )
             )
-            for lib, info in results
-        ]
         return items
 
     @staticmethod
@@ -238,11 +257,18 @@ class LibrarianService:
             LibrarianTypeInfo.type == librarian.type
         )
         type_info = (await db.execute(type_info_stmt)).scalars().first()
+        meta = LIBRARIAN_METADATA.get(librarian.type, {})
 
         return RepresentativeLibrarianResponse(
             librarian_id=librarian.id,
             type=librarian.type,
             name=librarian.name,
+            default_name=meta.get("default_name"),
+            species=meta.get("species"),
+            mbti=meta.get("mbti"),
+            genres=meta.get("genres", []),
+            description=meta.get("description"),
+            ending_style=meta.get("ending_style"),
             level=librarian.level,
             experience=librarian.experience,
             is_representative=librarian.is_representative,
@@ -271,10 +297,18 @@ class LibrarianService:
             )
 
         librarian, type_info = result
+        meta = LIBRARIAN_METADATA.get(librarian.type, {})
+
         return RepresentativeLibrarianResponse(
             librarian_id=librarian.id,
             type=librarian.type,
             name=librarian.name,
+            default_name=meta.get("default_name"),
+            species=meta.get("species"),
+            mbti=meta.get("mbti"),
+            genres=meta.get("genres", []),
+            description=meta.get("description"),
+            ending_style=meta.get("ending_style"),
             level=librarian.level,
             experience=librarian.experience,
             is_representative=librarian.is_representative,

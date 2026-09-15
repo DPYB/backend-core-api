@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from pydantic import Field
 
+from app.models.enums import LibrarianType
 from app.schemas.common import CamelModel
 
 
@@ -16,6 +17,9 @@ class MemberProfileResponse(CamelModel):
     gender: str | None = None
     status: str
     provider: str | None = None
+    librarian_type: LibrarianType | None = None
+    librarian_name: str | None = None
+    librarian_default_name: str | None = None
     created_at: datetime
 
 

@@ -8,14 +8,21 @@ from app.db.session import get_db
 from app.schemas.member import MemberProfileResponse, UpdateProfileRequest
 from app.services.member_service import MemberService
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+router = APIRouter(tags=["users"])
 
 
 @router.get(
-    "/me",
+    "/api/v1/users/me",
     response_model=MemberProfileResponse,
     status_code=status.HTTP_200_OK,
     summary="내 프로필 조회",
+)
+@router.get(
+    "/api/v1/members/me",
+    response_model=MemberProfileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="내 프로필 조회 (별칭)",
+    include_in_schema=False,
 )
 async def get_my_profile(
     member_id: uuid.UUID = Depends(get_current_member_id),
@@ -26,10 +33,17 @@ async def get_my_profile(
 
 
 @router.patch(
-    "/me",
+    "/api/v1/users/me",
     response_model=MemberProfileResponse,
     status_code=status.HTTP_200_OK,
     summary="내 프로필 수정",
+)
+@router.patch(
+    "/api/v1/members/me",
+    response_model=MemberProfileResponse,
+    status_code=status.HTTP_200_OK,
+    summary="내 프로필 수정 (별칭)",
+    include_in_schema=False,
 )
 async def update_my_profile(
     req: UpdateProfileRequest,
@@ -41,9 +55,15 @@ async def update_my_profile(
 
 
 @router.delete(
-    "/me",
+    "/api/v1/users/me",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="회원 탈퇴",
+)
+@router.delete(
+    "/api/v1/members/me",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="회원 탈퇴 (별칭)",
+    include_in_schema=False,
 )
 async def withdraw(
     member_id: uuid.UUID = Depends(get_current_member_id),

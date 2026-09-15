@@ -39,7 +39,8 @@
 - **도메인 불변식**:
   - **LexoRank (`ShelfRank`)**: 62진수 사전식 순서 문자열 정렬 및 자동 재분배(`rebalanced_sequence`).
   - **KDC 장르 체계**: KDC 10대 대분류 ENUM(`genre`), `@computed_field` 한글명(`genreName`: "문학", "기술과학" 등) 자동 계산, 세부 주제어(`subject`), 상세 분류기호(`kdc`).
-  - **사서(Librarian) 4종**: `CAT`, `SHOEBILL`, `SEA_SLUG`, `GECKO` (레거시 `RUSSIAN_BLUE` 별칭 호환). 회원당 타입별 최대 1마리, 단일 대표 사서 유지.
+  - **사서(Librarian) 4종**: `CAT`(블루), `SHOEBILL`(슈빌), `SEA_SLUG`(누디 - 갯민숭달팽이), `GECKO`(게코) (레거시 `RUSSIAN_BLUE` 별칭 호환). 회원당 타입별 최대 1마리, 단일 대표 사서 유지.
+
   - **도서 및 스크랩 Soft Delete Cascade**: 도서 또는 독서 기록 삭제 시 소속된 스크랩 일괄 소프트 삭제 (`deleted_at = now()`).
   - **Default Shelf 보장**: 회원당 기본 책장 자동 생성(Get-or-Create) 및 삭제 불가(`DEFAULT_SHELF_CANNOT_BE_DELETED`). 책장 삭제 시 소속 도서는 기본 책장 맨 뒤로 자동 이관.
 - **인증 계약**:
