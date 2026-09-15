@@ -56,14 +56,14 @@ MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안�
 
 1. **소셜 로그인 & 회원 자동 가입(Get-or-Create)**: Google `id_token` 또는 Kakao `access_token` 검증 후 회원 신규 가입 시 기본 책장(`Default Shelf`) 및 초기 대표 사서(`CAT`)를 자동 생성/지급합니다.
 2. **LexoRank (`ShelfRank`)**: 책장 내 도서 순서는 62진수 문자열로 저장되며, 이웃 도서 간 중간값(`between`)을 계산해 순서를 부여합니다. 키 공간 소진 시 자동으로 전체 책장 도서를 균등 재분배(`rebalanced_sequence`)합니다.
-3. **KDC 장르 및 화면 표시용 한글 라벨**: KDC 10대 대분류 ENUM(`genre`)을 저장하고, 프론트 표시용 `genreName`("문학", "기술과학" 등)은 DB 중복 저장 없이 Pydantic `@computed_field`로 동적 계산하여 응답합니다.
+3. **KDC 장르 및 화면 표시용 세부 주제(`displayGenre`)**: KDC 10대 대분류 ENUM(`genre`)을 저장하며, 소수점 세부분류기호(`kdc_to_subject`) 및 AI 에이전트/프론트엔드 입력으로부터 세부 주제(`subject`: SF, 에세이, IT 등)를 자동 추출합니다. 화면 표시용 `displayGenre`는 `subject`를 최우선 노출하고 없을 때만 대분류 `genreName`("문학" 등)으로 계층형 폴백(`@computed_field`)합니다.
 4. **기본 책장(Default Shelf) 보장**: 회원당 활성 기본 책장은 반드시 1개 존재(`is_default=true`)하며 삭제할 수 없습니다. 커스텀 책장 삭제 시 내부에 있던 도서들은 모두 기본 책장의 맨 뒤로 자동 이동합니다.
 5. **소프트 삭제 및 전사 캐스케이드(Cascade)**:
    - 도서(`library_book`) 또는 독서 기록(`records`) 삭제 시, 소속된 스크랩(`scrap`, `scraps`)들도 동일 트랜잭션에서 함께 소프트 삭제(`deleted_at = now()`)됩니다.
    - 회원 탈퇴(`DELETE /api/v1/users/me`) 시, 회원의 서재 책장, 도서, 스크랩, 독서기록, 사서 데이터가 단일 트랜잭션에서 일괄 소프트 삭제 처리됩니다.
 6. **사서 단일 대표성**: 회원은 타입당 1마리만 보유할 수 있으며, 활성 대표 사서는 회원당 최대 1마리로 유지됩니다.
 7. **독서 진도율 및 완독 상태/일시 자동 동기화**: 도서 등록, 수정(`update_book`), 진도 변경(`update_progress`) 시 `current_page == total_pages`에 도달하면 `reading_status`가 `COMPLETED`로 자동 전이되고 완독 일시(`completed_at`)가 기록됩니다. 페이지가 감소하면 `READING`으로 자동 복귀되고 `completed_at`은 `None`으로 리셋됩니다.
-8. **국립중앙도서관 API 인메모리 TTL 캐싱 및 Graceful Fallback**: 동일 ISBN 반복 조회 시 인메모리 TTL 캐시(정상 도서 24시간, 미존재 도서 1시간)를 우선 활용하며, 외부 API 타임아웃이나 서버 장애 발생 시 전체 검색 요청을 에러로 중단시키지 않고 Graceful Fallback(`book: None`)을 보장합니다.
+8. **국립중앙도서관 API 인메모리 TTL 캐싱, 교보문고 CDN 표지 폴백 및 Graceful Fallback**: 동일 ISBN 반복 조회 시 인메모리 TTL 캐시(정상 도서 24시간, 미존재 도서 1시간)를 우선 활용하며, 서지정보 표지 누락 시 10/13자리 정제 ISBN 기반 교보문고 고화질 CDN(`contents.kyobobook.co.kr`)으로 0ms 즉시 결합 폴백을 제공합니다. 외부 API 타임아웃이나 서버 장애 발생 시 전체 검색 요청을 에러로 중단시키지 않고 Graceful Fallback(`book: None`)을 보장합니다.
 
 ## 5. API 계약 및 보안 컨벤션
 

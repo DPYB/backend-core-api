@@ -146,3 +146,28 @@
 - **개발자 경험 개선**:
   - 머지 시 수동 텍스트 복사/편집 없이 **내용 확인 후 [Confirm squash and merge] 클릭 1회**로 DPYB 커밋 컨벤션 자동 준수 완성.
 
+## 2026-09-15: DPYB 중앙 PR 린트 및 템플릿에 '고려사항' 필수 검증 로직 반영
+- **중앙 CI 워크플로우 보강 (`DPYB/.github/.github/workflows/reusable-pr-lint.yml`)**:
+  - `## 💬 고려사항 & 리뷰 포인트` 섹션을 필수 4대 섹션으로 승격 및 자동 검사 항목에 추가.
+  - 고려사항 섹션의 본문이 주석이나 빈 불릿(`- `) 형태로만 방치되는 경우를 검출하여 PR 차단.
+  - 특별한 고려사항이 없는 단순 작업 PR의 경우 `해당 없음`, `특이사항 없음`, `N/A` 등을 작성하면 유연하게 통과하도록 설계.
+- **공통 템플릿 및 가이드 문서 동기화**:
+  - `.github/pull_request_template.md`: 고려사항 주석 가이드에 `(없을 경우 '해당 없음' 또는 '특이사항 없음' 기재)` 안내 추가.
+  - `docs/02-git-conventions.md`, `docs/03-vibe-coding-harness.md`: 4대 필수 섹션 명시 및 바이브 코딩 리뷰 포인트 작성 지침 개정.
+  - `DPYB/.github` 메인 브랜치에 커밋 및 원격 푸시 완료 (`da5ae49`).
+
+## 2026-09-15: KDC 세부 주제 파서 및 교보문고 CDN 표지 폴백 강화
+- **KDC 세부 주제(`subject`) 및 전천후 스마트 장르 파서 (`app/core/kdc_mapper.py`)**:
+  - 국립중앙도서관 API의 광범위한 10대 대분류(문학 등) 대신 소수점 세부분류기호(예: `813.7` -> `SF/과학소설`, `818` -> `에세이/산문`, `005.133` -> `IT/프로그래밍` 등)로부터 직관적인 세부 주제를 도출하는 `kdc_to_subject` 매퍼 구현.
+  - AI 에이전트와 프론트엔드의 국문("SF", "에세이", "문학", "철학"), 영문 대소문자("literature", "philosophy"), 레거시 코드("LITERARY_FICTION", "SCIENCE_FICTION"), 숫자 분류기호("813.7") 입력을 모두 자동 인식하여 표준 `GenreType` 대분류와 세부 `subject`로 분리 변환하는 `parse_to_genre_and_subject` 구현.
+- **도서 등록/수정 DTO 유연화 및 화면 표시 필드 (`app/schemas/library_book.py`, `app/schemas/search.py`)**:
+  - `CreateLibraryBookRequest`, `UpdateLibraryBookRequest`에 `@model_validator(mode="before")`를 적용하여 `genre` 및 `subject` 자동 파싱 및 보완.
+  - 모든 도서 응답 DTO(`CreateLibraryBookResponse`, `LibraryBookItemResponse`, `LibraryBookDetailResponse`, `UpdateLibraryBookResponse`, `ExternalBook`, `SearchLibraryBookDetail`)에 `@computed_field display_genre` 추가 (`self.subject or self.genre_name` 계층형 폴백).
+- **국립중앙도서관 클라이언트 및 도서 서비스 교보문고 고화질 CDN 표지 폴백 (`app/services/national_library.py`, `app/services/book_service.py`)**:
+  - `get_verified_cover_url`: 도서관 서지정보 표지 URL이 누락되더라도 정제된 10자리/13자리 ISBN이 있을 경우 교보문고 고화질 CDN(`contents.kyobobook.co.kr`)으로 0ms 즉시 결합 폴백.
+  - 도서 검색(`lookup_by_isbn`) 및 도서 생성/수정(`create_book`, `update_book`) 시에도 클라이언트 표지 누락 시 ISBN 기반 교보문고 CDN 자동 보완 적용.
+- **테스트 및 품질 검증**:
+  - `test_kdc_mapper.py` (KDC 세부 주제 및 스마트 파싱 단위 테스트 4건 추가), `test_books.py` (한글/영문/세부장르 등록 및 표지 자동 주입 테스트 2건 추가), `test_search.py` (교보문고 CDN 폴백 및 세부주제 통합 테스트 1건 추가).
+  - 총 67개 단위/통합 테스트 100% Pass (1.83s), `ruff check`, `ruff format`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+
+

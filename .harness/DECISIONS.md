@@ -4,6 +4,7 @@
 
 | 날짜 | 결정 | 이유 / 대안 비교 |
 | :--- | :--- | :--- |
+| 2026-09-15 | KDC 세부분류기호 기반 세부 주제(`subject`) 및 교보문고 CDN 고화질 표지 자동 폴백 도입, 화면 표시용 `display_genre` 제공 | 국립중앙도서관 API의 광범위한 대분류(문학 등) 대신 사용자가 선호하는 세부 장르(SF, 에세이, IT 등)를 화면에 우선 노출(`display_genre = subject or genre_name`)하여 UX를 극대화하고, AI 에이전트/프론트엔드의 국문/영문/코드 장르 입력을 유연하게 수용(`parse_to_genre_and_subject`). 또한 도서관 서지정보 표지 누락 시 교보문고 고화질 CDN(`contents.kyobobook.co.kr`)을 0ms 레이턴시로 자동 결합해 표지 누락을 원천 차단 |
 | 2026-09-14 | 전사 레포 Squash and merge 단일 머지 전략 강제 및 커밋 메시지 자동화 (`PR_TITLE`, `BLANK`) | GitHub 기본 머지 커밋으로 인한 `Merge pull request #N...` 생성 및 개별 커밋 로그 덤프로 매번 수동 텍스트 편집이 강제되던 피로감 해소. `allow_merge_commit: false`, `allow_rebase_merge: false`, `squash_merge_commit_title: "PR_TITLE"`, `squash_merge_commit_message: "BLANK"`를 전사 레포에 적용하여, 검증된 PR 제목(`타입[적용범위]: 요약`)이 단일 커밋으로 깔끔하게 남고 본문은 기본 빈칸으로 생성되어 인간은 내용 확인 후 단 1회 클릭으로 머지를 완료할 수 있도록 최적화 |
 | 2026-09-14 | 프론트엔드 연동용 개발자 간편 로그인(`POST /api/v1/auth/login`) 및 HttpOnly 쿠키 기반 세션 복원 지원 | 프론트엔드(`frontend-reader-web`)가 기존 이메일/비번 폼(`POST /auth/login`) 및 쿠키 기반 세션 복원(`/auth/refresh`)을 전제로 구현되어 있어, 소셜 OAuth 연동 설정 없이도 로컬에서 즉시 3D 서재/도서/사서 기능 E2E 테스트가 가능하도록 호환성 보장 (신규 가입 시 기본책장 및 대표 고양이 사서 자동 지급) |
 | 2026-09-14 | 독서 진도율 100% 도달 시 COMPLETED 자동 전이 및 completed_at 기록, 국립중앙도서관 API 인메모리 TTL 캐싱(24h/1h) 및 Graceful Fallback 도입 | 진도율 100%임에도 수동으로 완독 상태를 변경해야 하던 UX 불편 및 완독 일시 미기록 문제 해소, 국립중앙도서관 외부 API 장애/타임아웃 시 사용자 검색 전체가 500 에러로 실패하는 취약점을 방지하고 반복 요청 외부 쿼터 절약 |
