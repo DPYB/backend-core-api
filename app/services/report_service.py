@@ -5,7 +5,12 @@ from uuid import UUID
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import BookReadingStatus, GenreType, LibrarianType
+from app.models.enums import (
+    DEFAULT_LIBRARIAN_NAMES,
+    BookReadingStatus,
+    GenreType,
+    LibrarianType,
+)
 from app.models.librarian import Librarian
 from app.models.library_book import LibraryBook
 from app.models.reading_session import ReadingSession
@@ -80,18 +85,22 @@ class ReportService:
         )
         librarian_res = (await db.execute(lib_stmt)).scalars().first()
         if librarian_res:
+            resolved_name = librarian_res.name or DEFAULT_LIBRARIAN_NAMES.get(
+                librarian_res.type, "사서"
+            )
             lib_info = LibrarianReportInfo(
                 type=librarian_res.type,
-                name=librarian_res.name,
+                name=resolved_name,
                 level=librarian_res.level,
-                report_title=f"{librarian_res.name} 사서의 월간 독서 리포트",
+                report_title=f"{resolved_name} 사서의 월간 독서 리포트",
             )
         else:
+            default_cat_name = DEFAULT_LIBRARIAN_NAMES.get(LibrarianType.CAT, "블루")
             lib_info = LibrarianReportInfo(
                 type=LibrarianType.CAT,
-                name="블루",
+                name=default_cat_name,
                 level=1,
-                report_title="블루 사서의 월간 독서 리포트",
+                report_title=f"{default_cat_name} 사서의 월간 독서 리포트",
             )
 
         # 3. 해당 월 독서 세션 조회

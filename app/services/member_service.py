@@ -5,6 +5,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
+from app.models.enums import DEFAULT_LIBRARIAN_NAMES
 from app.models.librarian import Librarian
 from app.models.library_book import LibraryBook
 from app.models.member import Member
@@ -179,8 +180,14 @@ class MemberService:
         return member
 
     @staticmethod
-    def to_profile_response(member: Member) -> MemberProfileResponse:
+    def to_profile_response(
+        member: Member, librarian: Librarian | None = None
+    ) -> MemberProfileResponse:
         """Member 모델을 MemberProfileResponse DTO로 변환합니다."""
+        lib_type = librarian.type if librarian else None
+        lib_name = librarian.name if librarian else None
+        lib_default_name = DEFAULT_LIBRARIAN_NAMES.get(lib_type) if lib_type else None
+
         return MemberProfileResponse(
             member_id=str(member.member_id),
             email=member.email,
@@ -190,6 +197,9 @@ class MemberService:
             gender=member.gender,
             status=member.status,
             provider=member.provider,
+            librarian_type=lib_type,
+            librarian_name=lib_name or lib_default_name,
+            librarian_default_name=lib_default_name,
             created_at=member.created_at,
         )
 
@@ -199,7 +209,19 @@ class MemberService:
     ) -> MemberProfileResponse:
         """회원 본인 프로필을 조회합니다."""
         member = await MemberService.get_member_by_id(db, member_id)
-        return MemberService.to_profile_response(member)
+
+        # 대표 사서 조회 (없을 경우 첫 번째 활성 사서)
+        lib_stmt = (
+            select(Librarian)
+            .where(
+                Librarian.member_id == member_id,
+                Librarian.deleted_at.is_(None),
+            )
+            .order_by(Librarian.is_representative.desc(), Librarian.id.asc())
+        )
+        librarian = (await db.execute(lib_stmt)).scalars().first()
+
+        return MemberService.to_profile_response(member, librarian)
 
     @staticmethod
     async def update_profile(

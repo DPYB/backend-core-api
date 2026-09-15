@@ -98,3 +98,105 @@ async def test_rename_and_dismiss_librarian(client: AsyncClient):
     # 내 사서 목록에서 제외되었는지 확인
     my_libs = (await client.get("/api/v1/librarians")).json()
     assert not any(item["librarianId"] == lib_id for item in my_libs)
+
+
+@pytest.mark.asyncio
+async def test_librarian_types_catalog_metadata(client: AsyncClient):
+    resp = await client.get("/api/v1/librarian-types")
+    assert resp.status_code == 200
+    types = {t["type"]: t for t in resp.json()["types"]}
+
+    # CAT (블루)
+    cat = types["CAT"]
+    assert cat["defaultName"] == "블루"
+    assert cat["species"] == "러시안 블루"
+    assert cat["mbti"] == "INTJ"
+    assert "철학" in cat["genres"]
+    assert cat["endingStyle"] == "~냥"
+
+    # SHOEBILL (슈빌)
+    shoebill = types["SHOEBILL"]
+    assert shoebill["defaultName"] == "슈빌"
+    assert shoebill["species"] == "넙적부리황새"
+    assert shoebill["mbti"] == "ISTP"
+    assert "자연과학" in shoebill["genres"]
+    assert shoebill["endingStyle"] == "~두둥"
+
+    # SEA_SLUG (누디) - 기존 바다달팽이 -> 누디 변경 확인
+    sea_slug = types["SEA_SLUG"]
+    assert sea_slug["defaultName"] == "누디"
+    assert sea_slug["species"] == "갯민숭달팽이"
+    assert sea_slug["mbti"] == "INFP"
+    assert "문학" in sea_slug["genres"]
+    assert sea_slug["endingStyle"] == "~누누"
+
+    # GECKO (게코)
+    gecko = types["GECKO"]
+    assert gecko["defaultName"] == "게코"
+    assert gecko["species"] == "게코 도마뱀"
+    assert gecko["mbti"] == "ENFJ"
+    assert "역사" in gecko["genres"]
+    assert gecko["endingStyle"] == "~크크"
+
+
+@pytest.mark.asyncio
+async def test_acquire_librarian_default_name_fallback(client: AsyncClient):
+    # SEA_SLUG 획득 시 이름 생략 -> 기본 표시명 "누디" 자동 지정
+    resp = await client.post("/api/v1/librarians", json={"type": "SEA_SLUG"})
+    assert resp.status_code == 201
+    slug_data = resp.json()
+    assert slug_data["name"] == "누디"
+    assert slug_data["type"] == "SEA_SLUG"
+
+    # 대표 사서 지정
+    slug_id = slug_data["librarianId"]
+    set_rep = await client.patch(f"/api/v1/librarians/{slug_id}/representative")
+    assert set_rep.status_code == 200
+    rep_data = set_rep.json()
+    assert rep_data["name"] == "누디"
+    assert rep_data["defaultName"] == "누디"
+    assert rep_data["species"] == "갯민숭달팽이"
+    assert rep_data["mbti"] == "INFP"
+    assert "문학" in rep_data["genres"]
+    assert rep_data["endingStyle"] == "~누누"
+
+
+@pytest.mark.asyncio
+async def test_member_profile_librarian_info_and_alias(client: AsyncClient):
+    # 1. 개발자 간편 로그인으로 신규 회원 생성 (기본 CAT "블루" 대표 사서 자동 부여)
+    login_resp = await client.post(
+        "/api/v1/auth/login", json={"email": "nuditest@example.com"}
+    )
+    assert login_resp.status_code == 200
+    token = login_resp.json()["accessToken"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # 2. GET /api/v1/users/me 조회 시 대표 사서 정보 확인
+    users_me_resp = await client.get("/api/v1/users/me", headers=headers)
+    assert users_me_resp.status_code == 200
+    profile1 = users_me_resp.json()
+    assert profile1["librarianType"] == "CAT"
+    assert profile1["librarianName"] == "블루"
+    assert profile1["librarianDefaultName"] == "블루"
+
+    # 3. GET /api/v1/members/me 별칭 엔드포인트도 동일하게 작동 확인
+    members_me_resp = await client.get("/api/v1/members/me", headers=headers)
+    assert members_me_resp.status_code == 200
+    profile2 = members_me_resp.json()
+    assert profile2["memberId"] == profile1["memberId"]
+    assert profile2["librarianType"] == "CAT"
+    assert profile2["librarianName"] == "블루"
+
+    # 4. SEA_SLUG 획득 (이름 생략) 및 대표 지정 후 프로필 재조회
+    slug_resp = await client.post(
+        "/api/v1/librarians", json={"type": "SEA_SLUG"}, headers=headers
+    )
+    assert slug_resp.status_code == 201
+    slug_id = slug_resp.json()["librarianId"]
+
+    await client.patch(f"/api/v1/librarians/{slug_id}/representative", headers=headers)
+
+    updated_profile = (await client.get("/api/v1/members/me", headers=headers)).json()
+    assert updated_profile["librarianType"] == "SEA_SLUG"
+    assert updated_profile["librarianName"] == "누디"
+    assert updated_profile["librarianDefaultName"] == "누디"
