@@ -262,6 +262,7 @@ async def test_national_library_kyobo_cdn_fallback():
         mock_get.return_value = mock_response
         book = await client.lookup_by_isbn("9791190090018")
         assert book is not None
+        assert book.cover_url is not None
         assert "kyobobook.co.kr" in book.cover_url
         assert book.subject == "SF/과학소설"
         assert book.display_genre == "SF/과학소설"
