@@ -169,5 +169,15 @@
 - **테스트 및 품질 검증**:
   - `test_kdc_mapper.py` (KDC 세부 주제 및 스마트 파싱 단위 테스트 4건 추가), `test_books.py` (한글/영문/세부장르 등록 및 표지 자동 주입 테스트 2건 추가), `test_search.py` (교보문고 CDN 폴백 및 세부주제 통합 테스트 1건 추가).
   - 총 67개 단위/통합 테스트 100% Pass (1.83s), `ruff check`, `ruff format`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+- **머지 및 브랜치 정리**:
+  - PR [#6](https://github.com/DPYB/backend-core-api/pull/6) squash and merge 완료 (`324c30a`), `origin/develop` 동기화 및 로컬 피처 브랜치 정리 완료.
+
+**다음 세션 시작 시**:
+1. **로컬 풀스택 E2E 연동 검증** (`.harness/PLAN.md` 1번):
+   - `backend-core-api` (포트 8000) 구동
+   - `backend-ai-agent` (포트 8001, `CORE_API_BASE_URL=http://127.0.0.1:8000`) 구동
+   - `frontend-reader-web` 개발 서버 연동: 로그인 -> 3D 서재 -> 사서 추천 도서 클릭 및 `displayGenre`/표지 이미지 자동 채움 등록 E2E 검증
+2. **실환경 인프라 배포 및 무과금($0) 상시 가동 검증** (`.harness/PLAN.md` 2번):
+   - Render Web Service 신규 배포 및 환경변수 등록, Supabase 마이그레이션 확인, 중앙 킵얼라이브 연동 점검.
 
 
