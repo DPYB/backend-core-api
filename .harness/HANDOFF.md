@@ -180,4 +180,26 @@
 2. **실환경 인프라 배포 및 무과금($0) 상시 가동 검증** (`.harness/PLAN.md` 2번):
    - Render Web Service 신규 배포 및 환경변수 등록, Supabase 마이그레이션 확인, 중앙 킵얼라이브 연동 점검.
 
+## 2026-09-15: 사서 월간 독서 리포트 통계 집계 API & 스톱워치 독서 세션 구축
+- **기획 요구사항 분석 및 불필요한 '중단' 상태 배제**:
+  - `BookReadingStatus`에 '중단' 상태를 새로 추가하지 않고 기존 3단계 체제(`PLANNED`, `READING`, `COMPLETED`)를 유지하여 시스템 복잡도 최소화. 리포트 05번 항목은 "완독 도서 / 읽는 중 도서"로 일원화.
+- **날씨 데이터 및 스톱워치 세션 모델 영속화 (`005_add_reading_session_and_weather.py`)**:
+  - `record.records` 테이블에 `weather VARCHAR(50) NULL` 컬럼 추가 (프론트엔드 Geolocation 기반 condition 자연 수집).
+  - `record.reading_sessions` 테이블 신설: `id`, `member_id`, `book_id` (옵셔널/자유독서), `duration_minutes`, `start_page`, `end_page`, `weather`, `created_at`.
+- **스톱워치 독서 세션 기록 API (`POST /api/v1/reading-sessions`)**:
+  - 스톱워치 종료 시 단 1회 호출로 소요시간(분), 페이지 증분, 날씨를 영속화.
+  - 도서가 지정된 경우 `book.current_page` 갱신 및 100% 도달 시 `COMPLETED` 자동 전이/`completed_at` 자동 기록.
+- **월간 독서 리포트 정량 통계 집계 서비스 및 API (`GET /api/v1/reports/monthly-stats`)**:
+  - `ReportService`: 01~05번 전수 정량 통계 집계 (사서 정보, 완독수/누적페이지/총독서시간/목표달성률, 요일/시간대/날씨 활동 분포, 평균 완독일, 최장 연속 독서 Streak, KDC 10대 장르 점유율 및 편독/다양성 지수, 상위 스크랩 도서, 대표 감상평, 완독/읽는중 도서 목록).
+  - 프론트엔드와 AI 에이전트 연동 호환을 위해 모든 DTO를 `CamelModel` 상속으로 camelCase 자동 직렬화 및 mypy 무결점 타입 보장.
+- **테스트 및 품질 검증**:
+  - `tests/test_reading_sessions.py` 5건, `tests/test_monthly_reports.py` 2건 추가 (총 74개 테스트 100% Pass).
+  - `ruff check`, `ruff format`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+
+**다음 세션 시작 시**:
+1. AI 에이전트 서비스(`backend-ai-agent`)에서 Core API의 `GET /api/v1/reports/monthly-stats` 연동 및 Gemini LLM 프롬프트(06번 성향 분석, 07번 독서 처방) 파이프라인 구현.
+2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
+3. 로컬 풀스택 E2E 연동 검증 및 Render 배포.
+
+
 

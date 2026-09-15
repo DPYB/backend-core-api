@@ -33,6 +33,9 @@ class RecordCreateRequest(BaseModel):
     content: str = Field(..., min_length=1, description="독서 감상평 본문")
     rating: int | None = Field(default=None, ge=1, le=5, description="별점 (1~5)")
     read_at: datetime | None = Field(default=None, description="완독 일시")
+    weather: str | None = Field(
+        default=None, max_length=50, description="작성 당시 날씨"
+    )
     scraps: list[ScrapCreateDto] = Field(
         default_factory=list, description="함께 저장할 문장 스크랩 목록"
     )
@@ -48,5 +51,6 @@ class RecordResponse(BaseModel):
     content: str
     rating: int | None = None
     read_at: datetime | None = None
+    weather: str | None = None
     created_at: datetime
     scraps: list[ScrapResponseDto] = []
