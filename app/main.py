@@ -12,7 +12,9 @@ from app.routers import (
     books_router,
     health_router,
     librarians_router,
+    reading_sessions_router,
     records_router,
+    reports_router,
     scraps_router,
     search_router,
     shelves_router,
@@ -64,6 +66,8 @@ def create_app() -> FastAPI:
     app.include_router(scraps_router)
     app.include_router(librarians_router)
     app.include_router(records_router)
+    app.include_router(reading_sessions_router)
+    app.include_router(reports_router)
 
     return app
 

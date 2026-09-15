@@ -14,5 +14,7 @@
 - [ ] 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 Render Core API 헬스체크 엔드포인트 연동 점검
 
 ## 3. 타 서비스 통신 계약 및 통합(E2E) 연계 검증
-- [ ] `backend-ai-agent` 서비스와의 Function Calling 연동 테스트 (사서 조회, 서재 도서 목록 조회)
-- [ ] `frontend-reader-web` 실환경 CORS 및 소셜 로그인/JWT 토큰 추출 교차 검증
+- [ ] `backend-ai-agent` 서비스와의 Function Calling 연동 테스트 (사서 조회, 서재 도서 목록 조회, 월간 통계 수신 및 06/07 AI 리포트 생성)
+- [ ] `frontend-reader-web` 실환경 CORS 및 스톱워치 세션/날씨 전송/월간 리포트 뷰 E2E 검증
+
+

@@ -21,4 +21,6 @@
 - **Phase 16 (전사 레포 Squash 머지 단일화 & 원클릭 컨벤션 자동화)**: DPYB 전사 4개 레포(`backend-core-api`, `backend-ai-agent`, `frontend-reader-web`, `.github`)에 `Allow merge commits` 및 `Rebase` 차단, `Squash and merge` 단일화, PR 제목(`PR_TITLE`) 자동 매핑, 본문 빈칸(`BLANK`) 기본 설정, 머지 후 피처 브랜치 자동 삭제(`delete_branch_on_merge`) 일괄 적용 완료. DPYB 공통 문서(`docs/02-git-conventions.md`) 및 자동화 스크립트(`setup-branch-protection.sh`) 업데이트 완료
 - **Phase 17 (PR 본문 '고려사항 & 리뷰 포인트' 섹션 필수 검증 반영)**: DPYB 중앙 CI(`reusable-pr-lint.yml`) 및 템플릿에 `## 💬 고려사항 & 리뷰 포인트`를 필수 4대 섹션으로 승격, 빈칸 방치 검증 로직 추가 및 '해당 없음'/'특이사항 없음' 허용 가이드 반영 완료
 - **Phase 18 (KDC 세부 주제 파서 & 교보문고 CDN 표지 폴백 강화)**: KDC 세부분류기호 기반 세부 주제(`subject`: SF, 에세이, 소설, IT 등) 자동 추출 및 사용자 화면 최우선 표시용 `display_genre` 필드 제공, 국문/영문/코드 다국어 장르 스마트 파싱(`parse_to_genre_and_subject`), 도서관 API 및 도서 등록 시 교보문고 고화질 CDN(`contents.kyobobook.co.kr`) 0ms 표지 폴백 구축 완료 (총 67개 테스트 100% Pass)
+- **Phase 19 (사서 월간 독서 리포트 통계 집계 API & 스톱워치 독서 세션 연동)**: 불필요한 '중단' 상태를 배제하고 기존 3단계 체제 유지, Alembic `005_add_reading_session_and_weather` 마이그레이션(날씨 컬럼 및 `record.reading_sessions` 신설), 스톱워치 종료 시 `POST /api/v1/reading-sessions` 단일 호출로 독서시간·페이지·날씨 영속화 및 도서 진도율/완독 자동 동기화, `GET /api/v1/reports/monthly-stats` 엔드포인트를 통한 01~05번 정량 통계(완독수, 누적페이지, 총시간, 요일/시간대/날씨 분포, 최장 Streak, KDC 10대 장르 다양성/편독 지수, 상위 스크랩 도서, 완독/읽는중 도서 등) 전수 집계 구현 완료 (총 74개 테스트 100% Pass)
+
 

@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends
+from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
@@ -133,3 +133,15 @@ async def get_current_member_id(
         raise
     except Exception as e:
         raise UnauthorizedException("인증에 실패했습니다.") from e
+
+
+async def get_authenticated_member_id(
+    x_member_id: uuid.UUID | None = Header(None, alias="X-Member-Id"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> uuid.UUID:
+    """
+    X-Member-Id 헤더가 있으면 우선 사용하고, 없을 경우 Bearer JWT 토큰을 검증합니다.
+    """
+    if x_member_id:
+        return x_member_id
+    return await get_current_member_id(credentials)

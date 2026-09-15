@@ -27,6 +27,7 @@ class RecordService:
             content=dto.content,
             rating=dto.rating,
             read_at=dto.read_at,
+            weather=dto.weather,
         )
         db.add(record)
         await db.flush()
