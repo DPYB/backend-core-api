@@ -201,5 +201,31 @@
 2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
 3. 로컬 풀스택 E2E 연동 검증 및 Render 배포.
 
+## 2026-09-15: 동물 사서 4종 페르소나 및 기본 표시명 동기화 (`SEA_SLUG` ➔ '누디')
+- **사서 4종 페르소나 카탈로그 및 기본 표시명 동기화 (`app/models/enums.py`)**:
+  - `backend-ai-agent` 명세서에 맞춰 `SEA_SLUG`의 기본 표시명을 기존 '바다달팽이'에서 '누디'로 개편.
+  - 사서 4종 메타데이터 카탈로그(`LIBRARIAN_METADATA`) 및 기본 표시명 매핑(`DEFAULT_LIBRARIAN_NAMES`) 구축:
+    1. `CAT`: 러시안 블루, 기본 표시명 "블루", MBTI INTJ, 담당 장르 [총류, 철학, 종교], 종결어미 ~냥
+    2. `SHOEBILL`: 넙적부리황새, 기본 표시명 "슈빌", MBTI ISTP, 담당 장르 [자연과학, 기술과학], 종결어미 ~두둥
+    3. `SEA_SLUG`: 갯민숭달팽이, 기본 표시명 "누디", MBTI INFP, 담당 장르 [예술, 문학], 종결어미 ~누누
+    4. `GECKO`: 게코 도마뱀, 기본 표시명 "게코", MBTI ENFJ, 담당 장르 [사회과학, 언어, 역사], 종결어미 ~크크
+- **사서 타입 조회 & 획득 API 개선 (`app/schemas/librarian.py`, `app/services/librarian_service.py`)**:
+  - `GET /api/v1/librarian-types`: 응답 DTO에 `default_name`, `species`, `mbti`, `genres`, `description`, `ending_style`을 기본 제공하여 프론트엔드가 하드코딩 없이 사서 정보를 동적 렌더링하도록 지원.
+  - `POST /api/v1/librarians`: `name` 필드를 옵셔널로 변경하여 생략/공백 시 타입별 `default_name` 자동 지정 (예: `SEA_SLUG` -> "누디").
+  - 대표 사서 및 내 사서 목록 조회 시 메타데이터 필드 함께 반환.
+- **회원 프로필 조회 API 사서 정보 통합 & 라우터 별칭 (`app/schemas/member.py`, `app/services/member_service.py`, `app/routers/users.py`)**:
+  - `MemberProfileResponse`에 `librarian_type`, `librarian_name`, `librarian_default_name` 필드 추가.
+  - `GET /api/v1/users/me` 및 프론트엔드 연동용 별칭 `GET /api/v1/members/me` 지원.
+  - 월간 리포트 통계 집계(`ReportService`) 사서 이름 폴백 보강.
+- **테스트 및 코드 품질 검증**:
+  - `tests/test_librarians.py`: 사서 4종 페르소나 메타데이터 검증, `SEA_SLUG` 이름 생략 획득 시 "누디" 자동 지정, 프로필 조회 시 사서 정보 동기화 및 `/api/v1/members/me` 별칭 검증 3개 테스트 추가.
+  - 총 77개 테스트 100% Pass (1.86s), `ruff check`, `ruff format`, `mypy app` 검사 100% 무결점 통과.
+
+**다음 세션 시작 시**:
+1. AI 에이전트 서비스(`backend-ai-agent`)에서 Core API `GET /api/v1/reports/monthly-stats` 연동 및 Gemini LLM 분석/처방 구현.
+2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
+3. 로컬 풀스택 E2E 연동 검증 (`.harness/PLAN.md` 1번) 및 Render 배포.
+
+
 
 
