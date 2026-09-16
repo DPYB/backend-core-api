@@ -1,0 +1,10 @@
+#!/bin/sh
+# 소스 코드가 수정되었는데 STATE.md가 스테이징에 없으면 터미널에 경고 출력 (Non-blocking)
+CHANGED_CODE=$(git diff --cached --name-only | grep -E '\.(ts|tsx|py|go|java|js)$' || true)
+STATE_MODIFIED=$(git diff --cached --name-only | grep 'STATE\.md$' || true)
+
+if [ -n "$CHANGED_CODE" ] && [ -z "$STATE_MODIFIED" ]; then
+  printf "\033[33m⚠️ [Harness Notice] 소스 코드 변경이 감지되었으나 .harness/STATE.md가 수정되지 않았습니다.\033[0m\n"
+  printf "\033[33m   완료된 주요 마일스톤이 있다면 STATE.md를 함께 갱신해주세요.\033[0m\n"
+fi
+exit 0
