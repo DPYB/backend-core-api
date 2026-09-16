@@ -52,6 +52,7 @@
   - 동적 `$PORT` 환경변수 바인딩 (`Dockerfile`).
   - `/health` 엔드포인트에서 Supabase `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지.
   - 중앙 `DPYB/.github` 워크플로우에서 10분 주기로 서비스 전체를 일괄 핑하는 중앙 킵얼라이브 연동 (개별 `keep-alive.yml` 크론 불필요).
+- **AI 자가 검증 필수**: 코드 수정 직후 반드시 `ruff check --fix .` 및 `pytest`를 터미널에서 실행하고, 에러나 경고가 0개가 될 때까지 스스로 터미널 로그를 보고 코드를 고칠 것.
 
 ## 5. 브랜치 & 커밋 컨벤션
 [DPYB `.github` 레포의 02-git-conventions.md](https://github.com/DPYB/.github/blob/main/docs/02-git-conventions.md)를 따르며, 아래 불변식을 강제한다:
