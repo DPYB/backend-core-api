@@ -97,3 +97,31 @@ async def test_scrap_access_denied(client: AsyncClient, other_client: AsyncClien
     get_attempt = await other_client.get(f"/api/v1/library/scraps/{scrap_id}")
     assert get_attempt.status_code == 403
     assert get_attempt.json()["code"] == "SCRAP_ACCESS_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_list_scraps_response_contains_scraps_field(client: AsyncClient):
+    # 스크랩 목록 조회 시 items와 scraps가 모두 존재하는지 확인
+    book_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "스크랩 도서", "author": "저자"},
+        )
+    ).json()["bookId"]
+
+    await client.post(
+        f"/api/v1/library/books/{book_id}/scraps",
+        json={
+            "sentence": "호환성 스크랩 문장입니다.",
+            "scrapImageUrl": "https://example.com/scrap.jpg",
+        },
+    )
+
+    resp = await client.get(f"/api/v1/library/books/{book_id}/scraps")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert "scraps" in data
+    assert isinstance(data["scraps"], list)
+    assert len(data["scraps"]) >= 1
+    assert data["scraps"][0]["sentence"] == "호환성 스크랩 문장입니다."

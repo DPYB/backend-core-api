@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from pydantic import Field, field_validator
+from pydantic import Field, computed_field, field_validator
 
 from app.core.exceptions import InvalidScrapDataException
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, PaginatedResponse
 
 
 class CreateScrapRequest(CamelModel):
@@ -45,6 +45,14 @@ class ScrapResponse(CamelModel):
     scrap_image_url: str
     memo: str | None = None
     created_at: datetime
+
+
+class ScrapPageResponse(PaginatedResponse[ScrapResponse]):
+    @computed_field
+    @property
+    def scraps(self) -> list[ScrapResponse]:
+        """프론트엔드(frontend-reader-web) 및 레거시 클라이언트 호환 필드"""
+        return self.items
 
 
 class ScrapDetailResponse(CamelModel):

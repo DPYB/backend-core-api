@@ -226,6 +226,28 @@
 2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
 3. 로컬 풀스택 E2E 연동 검증 (`.harness/PLAN.md` 1번) 및 Render 배포.
 
+## 2026-09-16: 타 서비스(Frontend/AI Agent) 통신 계약 완벽 일치화 & 소셜 로그인 실환경 스펙 확정
+- **타 서비스 통신 계약 전수 분석 및 페이징 응답 듀얼 직렬화 (`app/schemas/common.py`, `app/schemas/library_book.py`, `app/schemas/scrap.py`)**:
+  - `frontend-reader-web`의 `listLibraryBooks()`가 `res.books`, `listScraps()`가 `res.scraps`를 기대하고, `backend-ai-agent`는 `res.items`를 조회하는 불일치를 발굴 및 해결.
+  - `LibraryBookPageResponse` 및 `ScrapPageResponse`를 구현하여 `@computed_field`를 통해 `items`, `books`, `scraps`를 모두 제공하는 완벽한 하위/상위 호환성 확보.
+- **도서 검색 및 단건 상세 조회 유연화 (`app/routers/search.py`, `app/services/book_service.py`, `app/core/security.py`)**:
+  - AI 에이전트의 단건 도서 조회(`core_api_client.get_book_details`)를 위해 `GET /api/v1/books/{book_id}` 별칭 라우트 및 `get_book_detail_optional_member` 구현.
+  - 도서 검색(`GET /api/v1/books/search`): `isbn` 단건 검색과 `query` 키워드 검색을 모두 수용하고 `get_optional_member_id`를 통해 비로그인/도구 호출 허용. 응답 DTO `BookSearchResponse`에 AI 에이전트 호환용 `books` 리스트 자동 구성.
+- **소셜 로그인 프로필 즉시 반환 (`app/routers/auth.py`)**:
+  - `/social/google`, `/social/kakao` 응답 모델을 `LoginResponse`로 격상하여 JWT 토큰과 함께 회원 프로필(`member`) 및 대표 사서 정보를 즉시 반환하도록 개선 (프론트엔드 `AuthProvider` 즉시 동기화).
+- **실환경 환경변수 템플릿 전면 정비 (`.env.example`)**:
+  - Google OAuth 2.0 Web Client ID(`GOOGLE_CLIENT_ID`), Kakao REST API Key(`KAKAO_CLIENT_ID`), Supabase 트랜잭션 풀러(`DB_*`), JWT, 국립중앙도서관, AI Agent 연동 주소, Cloudflare 프론트엔드 CORS 도메인 등 Render 배포용 가이드 완성.
+- **전체 서비스 검증 통과**:
+  - `backend-core-api`: 신규 테스트 4건 추가, 총 81개 테스트 100% Pass (2.01s), `ruff check`, `ruff format`, `mypy app` 무결점.
+  - `backend-ai-agent`: 총 100개 테스트 100% Pass (37.31s).
+  - `frontend-reader-web`: `npm run build` 번들 빌드 100% 성공.
+
+**다음 세션 시작 시**:
+1. Render Web Service 신규 생성 및 Dockerfile 기반 배포 설정 (동적 `$PORT` 바인딩).
+2. Render 대시보드에 확정된 환경변수(`DB_*`, `JWT_SECRET_KEY`, `GOOGLE_CLIENT_ID`, `KAKAO_CLIENT_ID`, `CORS_ORIGINS`, `NL_API_CERT_KEY`) 등록 및 배포.
+3. 실환경 배포 인스턴스 헬스체크 (`GET /health`) 및 중앙 `DPYB/.github` 킵얼라이브 워크플로우 핑 수신 확인.
+
+
 
 
 

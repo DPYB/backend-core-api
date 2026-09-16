@@ -8,7 +8,7 @@ from app.core.kdc_mapper import (
     parse_to_genre_and_subject,
 )
 from app.models.enums import BookReadingStatus, GenreType
-from app.schemas.common import CamelModel
+from app.schemas.common import CamelModel, PaginatedResponse
 
 
 class CreateLibraryBookRequest(CamelModel):
@@ -115,6 +115,14 @@ class LibraryBookItemResponse(CamelModel):
         if self.total_pages and self.total_pages > 0:
             return round((self.current_page / self.total_pages) * 100, 1)
         return 0.0
+
+
+class LibraryBookPageResponse(PaginatedResponse[LibraryBookItemResponse]):
+    @computed_field
+    @property
+    def books(self) -> list[LibraryBookItemResponse]:
+        """프론트엔드(frontend-reader-web) 및 레거시 클라이언트 호환 필드"""
+        return self.items
 
 
 class LibraryBookDetailResponse(CamelModel):

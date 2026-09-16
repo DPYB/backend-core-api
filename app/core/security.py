@@ -145,3 +145,24 @@ async def get_authenticated_member_id(
     if x_member_id:
         return x_member_id
     return await get_current_member_id(credentials)
+
+
+async def get_optional_member_id(
+    x_member_id: uuid.UUID | None = Header(None, alias="X-Member-Id"),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> uuid.UUID | None:
+    """
+    선택적 회원 식별자 추출 의존성:
+    X-Member-Id 또는 Bearer JWT가 유효하면 해당 member_id를 반환하고,
+    미인증 요청인 경우 예외를 발생시키지 않고 None을 반환합니다.
+    """
+    if x_member_id:
+        return x_member_id
+    if not credentials or not credentials.credentials:
+        return None
+    try:
+        payload = decode_jwt_token(credentials.credentials)
+        sub = payload.get("sub") or payload.get("member_id")
+        return uuid.UUID(str(sub)) if sub else None
+    except Exception:
+        return None

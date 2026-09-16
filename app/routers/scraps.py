@@ -6,12 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import InvalidFilterParameterException
 from app.core.security import get_current_member_id
 from app.db.session import get_db
-from app.schemas.common import PaginatedResponse
 from app.schemas.scrap import (
     CreateScrapRequest,
     CreateScrapResponse,
     ScrapDetailResponse,
-    ScrapResponse,
+    ScrapPageResponse,
     UpdateScrapRequest,
     UpdateScrapResponse,
 )
@@ -36,7 +35,7 @@ async def create_scrap(
 
 @router.get(
     "/books/{book_id}/scraps",
-    response_model=PaginatedResponse[ScrapResponse],
+    response_model=ScrapPageResponse,
 )
 async def get_book_scraps(
     book_id: int,
@@ -50,7 +49,7 @@ async def get_book_scraps(
 
 @router.get(
     "/scraps",
-    response_model=PaginatedResponse[ScrapResponse],
+    response_model=ScrapPageResponse,
 )
 async def get_scraps_by_query(
     book_id: int | None = Query(None, alias="bookId"),

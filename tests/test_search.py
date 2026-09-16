@@ -268,3 +268,70 @@ async def test_national_library_kyobo_cdn_fallback():
         assert book.display_genre == "SF/과학소설"
         assert book.genre == GenreType.LITERATURE
         assert book.genre_name == "문학"
+
+
+@pytest.mark.asyncio
+async def test_search_by_keyword_query(client: AsyncClient, db_session: AsyncSession):
+    shelf = Shelf(member_id=TEST_MEMBER_ID, name="기본 책장", is_default=True)
+    db_session.add(shelf)
+    await db_session.flush()
+
+    book = LibraryBook(
+        member_id=TEST_MEMBER_ID,
+        shelf_id=shelf.id,
+        shelf_rank="V",
+        title="인공지능 철학 콘서트",
+        author="이수영",
+        isbn="9788900000001",
+        genre=GenreType.PHILOSOPHY,
+        subject="인공지능 윤리",
+        reading_status=BookReadingStatus.READING,
+        total_pages=300,
+        current_page=50,
+    )
+    db_session.add(book)
+    await db_session.commit()
+
+    # query 파라미터로 검색
+    resp = await client.get("/api/v1/books/search?query=인공지능")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["alreadyRegistered"] is True
+    assert data["libraryBook"]["title"] == "인공지능 철학 콘서트"
+    # AI 에이전트 호환용 books 필드 검증
+    assert "books" in data
+    assert len(data["books"]) == 1
+    assert data["books"][0]["title"] == "인공지능 철학 콘서트"
+    assert data["books"][0]["book_id"] == str(book.id)
+
+
+@pytest.mark.asyncio
+async def test_get_book_by_id_alias(client: AsyncClient, db_session: AsyncSession):
+    shelf = Shelf(member_id=TEST_MEMBER_ID, name="기본 책장", is_default=True)
+    db_session.add(shelf)
+    await db_session.flush()
+
+    book = LibraryBook(
+        member_id=TEST_MEMBER_ID,
+        shelf_id=shelf.id,
+        shelf_rank="V",
+        title="데미안",
+        author="헤르만 헤세",
+        isbn="9788937460449",
+        genre=GenreType.LITERATURE,
+        subject="성장소설",
+        reading_status=BookReadingStatus.COMPLETED,
+        total_pages=240,
+        current_page=240,
+    )
+    db_session.add(book)
+    await db_session.commit()
+
+    # /api/v1/books/{book_id} 별칭 호출 검증
+    resp = await client.get(f"/api/v1/books/{book.id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["bookId"] == book.id
+    assert data["title"] == "데미안"
+    assert data["readingStatus"] == "COMPLETED"
+    assert data["displayGenre"] == "성장소설"
