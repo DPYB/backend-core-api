@@ -438,6 +438,22 @@ async def test_create_book_kyobo_cdn_cover_auto_injected(client: AsyncClient):
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["coverUrl"] is not None
     assert "contents.kyobobook.co.kr" in data["coverUrl"]
     assert "9791190090018" in data["coverUrl"]
+
+
+@pytest.mark.asyncio
+async def test_list_books_response_contains_books_field(client: AsyncClient):
+    # 도서 생성 후 목록 조회 시 items와 books가 모두 존재하는지 확인
+    await client.post(
+        "/api/v1/library/books",
+        json={"title": "호환성 도서", "author": "호환 작가"},
+    )
+    resp = await client.get("/api/v1/library/books")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "items" in data
+    assert "books" in data
+    assert isinstance(data["books"], list)
+    assert len(data["books"]) >= 1
+    assert data["books"][0]["title"] == "호환성 도서"
