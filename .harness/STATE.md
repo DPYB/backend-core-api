@@ -25,6 +25,7 @@
 - **Phase 20 (사서 4종 페르소나 및 기본 표시명 동기화)**: AI 에이전트 서비스 규격에 맞춰 사서 4종(`CAT`="블루", `SHOEBILL`="슈빌", `SEA_SLUG`="누디", `GECKO`="게코") 페르소나 메타데이터(MBTI, 담당 장르, 설명, 종결어미) 및 기본 표시명 매핑(`DEFAULT_LIBRARIAN_NAMES`) 구축, `GET /api/v1/librarian-types` 응답에 메타데이터 통합 반환, 사서 획득 시 이름 생략 시 기본 표시명 자동 폴백, `GET /api/v1/members/me` 및 `GET /api/v1/users/me` 프로필 응답에 대표 사서 정보(`librarian_type`, `librarian_name`, `librarian_default_name`) 통합 완료 (총 77개 테스트 100% Pass)
 - **Phase 21 (타 서비스 통신 계약 및 통합 연계 완결)**: `frontend-reader-web` 및 `backend-ai-agent` 통신 계약 전수 분석 및 완벽 호환 보장: 페이징 응답 DTO에 프론트엔드 호환 `books` 및 `scraps` 필드 듀얼 직렬화(`LibraryBookPageResponse`, `ScrapPageResponse`), 도서 단건 조회 별칭 엔드포인트(`GET /api/v1/books/{book_id}`) 추가, 도서 검색(`GET /api/v1/books/search`)에서 ISBN 및 키워드 통합 검색과 선택적 인증(`get_optional_member_id`) 지원, 소셜 로그인 응답에 회원 프로필(`member`) 즉시 반환 지원 (Core API 81개 테스트 100% Pass, AI Agent 100개 테스트 100% Pass, Frontend 빌드 성공 검증)
 - **Phase 22 (소셜 로그인 실환경 스펙 확정 및 환경변수 템플릿 정비)**: Google OAuth 2.0 Web Client ID(`GOOGLE_CLIENT_ID`) 및 Kakao REST API Key/Client ID(`KAKAO_CLIENT_ID`) 실환경 설정 스펙 확정, Render 배포용 `.env.example` 템플릿(Supabase Pooler, JWT, OAuth, 외부 API, CORS) 전면 정비 완료
+- **Phase 23 (중앙 Git Hooks 표준 연동)**: `.githooks/pre-commit` 등록 및 `core.hooksPath .githooks` 바인딩, 코드 변경 시 STATE.md 동반 갱신 알림 훅 검증 완료
 
 
 

@@ -247,6 +247,16 @@
 2. Render 대시보드에 확정된 환경변수(`DB_*`, `JWT_SECRET_KEY`, `GOOGLE_CLIENT_ID`, `KAKAO_CLIENT_ID`, `CORS_ORIGINS`, `NL_API_CERT_KEY`) 등록 및 배포.
 3. 실환경 배포 인스턴스 헬스체크 (`GET /health`) 및 중앙 `DPYB/.github` 킵얼라이브 워크플로우 핑 수신 확인.
 
+---
+
+## 2026-09-16: 중앙 Git Hooks 표준 연동 및 pre-commit 훅 활성화
+- **진행한 작업**:
+  - DPYB 조직 개발 표준에 맞춰 `.githooks/pre-commit` 등록 및 실행 권한(`chmod +x`) 부여.
+  - `core.hooksPath .githooks` 바인딩을 통해 커밋 시 코드 변경 사항이 있으나 `.harness/STATE.md`가 수정되지 않았을 때 non-blocking 안내 경고 출력 보장.
+  - `uv run pytest` (81 passed) 및 `uv run ruff check .` (All checks passed) 전체 자가 검증 통과.
+- **다음 세션에서 할 일**:
+  - PR 생성 및 사람 직접 머지 확인 후 배포 준비 진행.
+
 
 
 
