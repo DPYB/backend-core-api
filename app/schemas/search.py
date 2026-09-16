@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import computed_field
 
 from app.core.kdc_mapper import GENRE_KOREAN_NAMES
@@ -69,3 +71,35 @@ class BookSearchResponse(CamelModel):
     already_registered: bool
     library_book: SearchLibraryBookDetail | None = None
     book: ExternalBook | None = None
+
+    @computed_field
+    @property
+    def books(self) -> list[dict[str, Any]]:
+        """AI 에이전트(backend-ai-agent) 및 범용 검색 클라이언트 호환 리스트"""
+        if self.library_book:
+            return [
+                {
+                    "book_id": str(self.library_book.book_id),
+                    "title": self.library_book.title,
+                    "author": self.library_book.author,
+                    "isbn": self.library_book.isbn or "",
+                    "publisher": self.library_book.publisher or "",
+                    "cover_url": self.library_book.cover_url,
+                    "reading_status": self.library_book.reading_status.value,
+                    "display_genre": self.library_book.display_genre,
+                }
+            ]
+        if self.book:
+            return [
+                {
+                    "book_id": "",
+                    "title": self.book.title,
+                    "author": self.book.author,
+                    "isbn": self.book.isbn or "",
+                    "publisher": self.book.publisher or "",
+                    "cover_url": self.book.cover_url,
+                    "reading_status": "PLANNED",
+                    "display_genre": self.book.display_genre,
+                }
+            ]
+        return []

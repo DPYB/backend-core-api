@@ -74,7 +74,7 @@ async def dev_login(
 
 @router.post(
     "/social/google",
-    response_model=TokenResponse,
+    response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
     summary="Google 소셜 로그인 및 자동 회원가입",
 )
@@ -82,7 +82,7 @@ async def google_social_login(
     req: SocialLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> LoginResponse:
     """
     프론트엔드에서 수신한 Google ID Token을 검증하고, 회원을 생성하거나 조회하여 자체 JWT를 발급합니다.
     """
@@ -96,19 +96,22 @@ async def google_social_login(
 
     _set_refresh_cookie(response, refresh_token)
 
-    return TokenResponse(
+    profile = MemberService.to_profile_response(member)
+
+    return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),
         is_new_member=is_new,
+        member=profile,
     )
 
 
 @router.post(
     "/social/kakao",
-    response_model=TokenResponse,
+    response_model=LoginResponse,
     status_code=status.HTTP_200_OK,
     summary="Kakao 소셜 로그인 및 자동 회원가입",
 )
@@ -116,7 +119,7 @@ async def kakao_social_login(
     req: SocialLoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> LoginResponse:
     """
     프론트엔드에서 수신한 Kakao Access Token을 검증하고, 회원을 생성하거나 조회하여 자체 JWT를 발급합니다.
     """
@@ -130,13 +133,16 @@ async def kakao_social_login(
 
     _set_refresh_cookie(response, refresh_token)
 
-    return TokenResponse(
+    profile = MemberService.to_profile_response(member)
+
+    return LoginResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),
         is_new_member=is_new,
+        member=profile,
     )
 
 

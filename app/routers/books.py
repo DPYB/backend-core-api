@@ -5,12 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_member_id
 from app.db.session import get_db
-from app.schemas.common import PaginatedResponse
 from app.schemas.library_book import (
     CreateLibraryBookRequest,
     CreateLibraryBookResponse,
     LibraryBookDetailResponse,
-    LibraryBookItemResponse,
+    LibraryBookPageResponse,
     MoveBookShelfRequest,
     MoveBookShelfResponse,
     ReorderBookRequest,
@@ -36,7 +35,7 @@ async def create_book(
     return await BookService.create_book(db, member_id, request)
 
 
-@router.get("", response_model=PaginatedResponse[LibraryBookItemResponse])
+@router.get("", response_model=LibraryBookPageResponse)
 async def list_books(
     shelf_id: int | None = Query(None, alias="shelfId"),
     author: str | None = Query(None),

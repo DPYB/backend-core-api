@@ -321,6 +321,43 @@ class BookService:
         )
 
     @staticmethod
+    async def get_book_detail_optional_member(
+        db: AsyncSession, book_id: int, member_id: uuid.UUID | None = None
+    ) -> LibraryBookDetailResponse:
+        stmt = select(LibraryBook).where(
+            LibraryBook.id == book_id,
+            LibraryBook.deleted_at.is_(None),
+        )
+        book = (await db.execute(stmt)).scalars().first()
+        if not book:
+            raise LibraryBookNotFoundException("도서를 찾을 수 없습니다.")
+        if member_id is not None and book.member_id != member_id:
+            raise LibraryBookAccessDeniedException(
+                "해당 도서에 대한 접근 권한이 없습니다."
+            )
+
+        return LibraryBookDetailResponse(
+            book_id=book.id,
+            shelf_id=book.shelf_id,
+            shelf_rank=book.shelf_rank,
+            title=book.title,
+            author=book.author,
+            isbn=book.isbn,
+            genre=book.genre,
+            kdc=book.kdc,
+            subject=book.subject,
+            publisher=book.publisher,
+            published_date=book.published_date,
+            cover_url=book.cover_url,
+            reading_status=book.reading_status,
+            current_page=book.current_page,
+            total_pages=book.total_pages,
+            created_at=book.created_at,
+            updated_at=book.updated_at,
+            completed_at=book.completed_at,
+        )
+
+    @staticmethod
     async def update_book(
         db: AsyncSession,
         member_id: uuid.UUID,

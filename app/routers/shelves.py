@@ -13,8 +13,10 @@ from app.core.security import get_current_member_id
 from app.db.session import get_db
 from app.models.library_book import LibraryBook
 from app.models.shelf import Shelf
-from app.schemas.common import PaginatedResponse
-from app.schemas.library_book import LibraryBookItemResponse
+from app.schemas.library_book import (
+    LibraryBookItemResponse,
+    LibraryBookPageResponse,
+)
 from app.schemas.shelf import (
     CreateShelfRequest,
     CreateShelfResponse,
@@ -65,9 +67,7 @@ async def delete_shelf(
     await ShelfService.delete_shelf(db, member_id, shelf_id)
 
 
-@router.get(
-    "/{shelf_id}/books", response_model=PaginatedResponse[LibraryBookItemResponse]
-)
+@router.get("/{shelf_id}/books", response_model=LibraryBookPageResponse)
 async def get_shelf_books(
     shelf_id: int,
     page: int = Query(0, ge=0),
@@ -125,7 +125,7 @@ async def get_shelf_books(
         for b in books
     ]
 
-    return PaginatedResponse[LibraryBookItemResponse](
+    return LibraryBookPageResponse(
         items=items,
         page=page,
         size=size,
