@@ -32,6 +32,8 @@ async def test_monthly_report_empty_data(client: AsyncClient):
     assert data["overview"]["goalAchievementRate"] == 0.0
 
     # Habits
+    assert data["habits"]["totalSessionCount"] == 0
+    assert data["habits"]["avgSessionDurationMinutes"] == 0.0
     assert data["habits"]["longestStreakDays"] == 0
     assert data["habits"]["avgCompletionDays"] is None
     assert "MON" in data["habits"]["weekdayDistribution"]
@@ -194,6 +196,8 @@ async def test_monthly_report_full_aggregation(
     assert data["overview"]["goalAchievementRate"] == 66.7
 
     # 02. Habits
+    assert data["habits"]["totalSessionCount"] == 3
+    assert data["habits"]["avgSessionDurationMinutes"] == 30.0  # (40 + 30 + 20) / 3
     assert data["habits"]["weatherDistribution"]["rainy"] == 2
     assert data["habits"]["weatherDistribution"]["clear"] == 2  # session 1 + record 1
     assert data["habits"]["longestStreakDays"] == 4  # 9/2, 9/3, 9/4, 9/5 연속 4일!

@@ -173,7 +173,13 @@ class ReportService:
                 b.current_page or b.total_pages or 0 for b in completed_books
             )
 
-        total_duration = sum(s.duration_minutes for s in sessions)
+        total_duration_sec = sum(
+            s.duration_seconds
+            if s.duration_seconds is not None and s.duration_seconds > 0
+            else (s.duration_minutes * 60)
+            for s in sessions
+        )
+        total_duration = total_duration_sec // 60
         goal_books = 3
         goal_rate = (
             min(100.0, round((completed_count / goal_books) * 100, 1))
@@ -190,6 +196,13 @@ class ReportService:
         )
 
         # --- 02. 나의 독서 습관/리듬 (Habits) ---
+        total_session_count = len(sessions)
+        avg_session_duration = (
+            round((total_duration_sec / 60.0) / total_session_count, 1)
+            if total_session_count > 0
+            else 0.0
+        )
+
         weekday_counts = {
             "MON": 0,
             "TUE": 0,
@@ -214,9 +227,10 @@ class ReportService:
 
         # 세션 기반 집계
         for s in sessions:
-            active_dates.add(s.created_at.strftime("%Y-%m-%d"))
-            weekday_counts[weekday_map[s.created_at.weekday()]] += 1
-            hour = s.created_at.hour
+            ref_dt = s.end_time or s.start_time or s.created_at
+            active_dates.add(ref_dt.strftime("%Y-%m-%d"))
+            weekday_counts[weekday_map[ref_dt.weekday()]] += 1
+            hour = ref_dt.hour
             if 0 <= hour < 6:
                 time_counts["dawn"] += 1
             elif 6 <= hour < 18:
@@ -280,6 +294,8 @@ class ReportService:
                 longest_streak = current_streak
 
         habits = ReadingHabits(
+            total_session_count=total_session_count,
+            avg_session_duration_minutes=avg_session_duration,
             weekday_distribution=weekday_counts,
             time_distribution=time_counts,
             weather_distribution=dict(weather_counts),
