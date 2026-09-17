@@ -148,22 +148,39 @@ async def test_create_book_reading_session_and_list(
     assert d2["updatedCurrentPage"] == 100
     assert d2["progress"] == 25.0
 
-    # 3. 도서 세션 목록 조회 (GET /api/v1/books/{id}/reading-sessions)
+    # 3. 3차 세션 등록 (13초 독서 -> 0분 13초 정확 보존 검증)
+    session3_payload = {
+        "durationSeconds": 13,
+        "pageNumber": 105,
+        "memo": "짧은 13초 독서",
+    }
+    resp3 = await client.post(
+        f"/api/v1/books/{book.id}/reading-sessions", json=session3_payload
+    )
+    assert resp3.status_code == 201
+    d3 = resp3.json()
+    assert d3["durationSeconds"] == 13
+    assert d3["durationMinutes"] == 0  # 1분 올림 왜곡 없이 정확히 0분
+    assert d3["endPage"] == 105
+    assert d3["updatedCurrentPage"] == 105
+
+    # 4. 도서 세션 목록 조회 (GET /api/v1/books/{id}/reading-sessions)
     list_resp = await client.get(f"/api/v1/books/{book.id}/reading-sessions")
     assert list_resp.status_code == 200
     list_data = list_resp.json()
     assert list_data["bookId"] == book.id
-    assert list_data["sessionCount"] == 2
-    assert list_data["totalDurationSeconds"] == 2880  # 1680 + 1200
-    assert list_data["totalDurationMinutes"] == 48  # 28 + 20
-    assert len(list_data["sessions"]) == 2
-    # 최신순 확인 (session2가 먼저)
-    assert list_data["sessions"][0]["id"] == d2["id"]
-    assert list_data["sessions"][1]["id"] == d1["id"]
+    assert list_data["sessionCount"] == 3
+    assert list_data["totalDurationSeconds"] == 2893  # 1680 + 1200 + 13
+    assert list_data["totalDurationMinutes"] == 48  # 28 + 20 + 0
+    assert len(list_data["sessions"]) == 3
+    # 최신순 확인 (session3가 가장 먼저)
+    assert list_data["sessions"][0]["id"] == d3["id"]
+    assert list_data["sessions"][1]["id"] == d2["id"]
+    assert list_data["sessions"][2]["id"] == d1["id"]
 
-    # 4. 도서 상태 확인
+    # 5. 도서 상태 확인
     await db_session.refresh(book)
-    assert book.current_page == 100
+    assert book.current_page == 105
 
 
 @pytest.mark.asyncio

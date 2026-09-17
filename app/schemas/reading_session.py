@@ -15,7 +15,7 @@ class CreateReadingSessionRequest(CamelModel):
         default=None, ge=1, description="독서 집중 시간 (초 단위)"
     )
     duration_minutes: int | None = Field(
-        default=None, ge=1, le=1440, description="스톱워치 독서 소요 시간 (분 단위)"
+        default=None, ge=0, le=1440, description="스톱워치 독서 소요 시간 (분 단위)"
     )
     start_time: datetime | None = Field(default=None, description="세션 시작 시각")
     end_time: datetime | None = Field(default=None, description="세션 종료 시각")
@@ -39,11 +39,11 @@ class CreateReadingSessionRequest(CamelModel):
                     if mins is not None:
                         data["duration_seconds"] = int(mins) * 60
 
-            # duration_minutes 호환
+            # duration_minutes 호환 (60초 미만은 0분)
             if "duration_minutes" not in data and "durationMinutes" not in data:
                 secs = data.get("duration_seconds") or data.get("durationSeconds")
                 if secs is not None:
-                    data["duration_minutes"] = max(1, int(secs) // 60)
+                    data["duration_minutes"] = int(secs) // 60
 
             # page_number / pageNumber -> end_page 매핑 호환
             if "end_page" not in data and "endPage" not in data:
