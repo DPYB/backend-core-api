@@ -85,7 +85,7 @@ class ReadingSessionService:
         if duration_sec is None and duration_min is not None:
             duration_sec = duration_min * 60
         elif duration_sec is not None and duration_min is None:
-            duration_min = max(1, duration_sec // 60)
+            duration_min = duration_sec // 60
         elif duration_sec is None and duration_min is None:
             duration_sec = 0
             duration_min = 0
