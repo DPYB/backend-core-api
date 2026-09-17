@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, computed_field, model_validator
 
 from app.models.enums import BookReadingStatus
 from app.schemas.common import CamelModel
@@ -72,6 +72,18 @@ class ReadingSessionResponse(CamelModel):
     updated_current_page: int | None = None
     progress: float | None = None
     book_reading_status: BookReadingStatus | None = None
+
+    @computed_field
+    @property
+    def page_number(self) -> int | None:
+        """프론트엔드 호환용 도달 페이지 별칭 (end_page)"""
+        return self.end_page
+
+    @computed_field
+    @property
+    def page(self) -> int | None:
+        """프론트엔드 호환용 도달 페이지 단축 별칭 (end_page)"""
+        return self.end_page
 
 
 class BookReadingSessionListResponse(CamelModel):

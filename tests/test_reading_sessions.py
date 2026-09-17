@@ -162,6 +162,8 @@ async def test_create_book_reading_session_and_list(
     assert d3["durationSeconds"] == 13
     assert d3["durationMinutes"] == 0  # 1분 올림 왜곡 없이 정확히 0분
     assert d3["endPage"] == 105
+    assert d3["pageNumber"] == 105
+    assert d3["page"] == 105
     assert d3["updatedCurrentPage"] == 105
 
     # 4. 도서 세션 목록 조회 (GET /api/v1/books/{id}/reading-sessions)
