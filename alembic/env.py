@@ -34,6 +34,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         version_table_schema="core",
+        version_num_length=64,
         include_schemas=True,
     )
 
@@ -47,11 +48,25 @@ def do_run_migrations(connection: Connection) -> None:
         connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS core;"))
         connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS record;"))
         connection.execute(sa.text("CREATE SCHEMA IF NOT EXISTS member;"))
+        connection.execute(
+            sa.text("""
+            DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM information_schema.columns 
+                    WHERE table_schema = 'core' AND table_name = 'alembic_version' AND column_name = 'version_num'
+                ) THEN
+                    ALTER TABLE core.alembic_version ALTER COLUMN version_num TYPE VARCHAR(64);
+                END IF;
+            END $$;
+            """)
+        )
 
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         version_table_schema="core",
+        version_num_length=64,
         include_schemas=True,
     )
 

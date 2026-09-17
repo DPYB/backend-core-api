@@ -10,6 +10,7 @@ from app.core.kdc_mapper import (
     kdc_to_subject,
     parse_page_number,
     parse_publish_date,
+    refine_subject_by_keywords,
 )
 from app.schemas.search import ExternalBook
 
@@ -124,6 +125,19 @@ class NationalLibraryClient:
             and not str(raw_subject).strip().isdigit()
         ):
             inferred_subject = str(raw_subject).strip()
+
+        # 외국 SF 소설 등 KDC 800번대 한계 보완: 도서 제목 및 부가정보 기반 SF 오버라이드
+        title = item.get("TITLE", "")
+        raw_description = item.get("DESCRIPTION") or (
+            str(raw_subject)
+            if raw_subject and not str(raw_subject).strip().isdigit()
+            else None
+        )
+        inferred_subject = refine_subject_by_keywords(
+            title=title,
+            subject=inferred_subject,
+            description=raw_description,
+        )
 
         final_isbn = item.get("EA_ISBN") or clean_isbn
         cover_url = get_verified_cover_url(item.get("TITLE_URL"), final_isbn)

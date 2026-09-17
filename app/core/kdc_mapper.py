@@ -4,7 +4,7 @@ from app.models.enums import GenreType
 
 GENRE_KOREAN_NAMES = {
     GenreType.NONE: "기타/미분류",
-    GenreType.GENERAL: "총류",
+    GenreType.GENERAL: "교양",
     GenreType.PHILOSOPHY: "철학",
     GenreType.RELIGION: "종교",
     GenreType.SOCIAL_SCIENCE: "사회과학",
@@ -17,127 +17,139 @@ GENRE_KOREAN_NAMES = {
 }
 
 
+# 100~900번대 KDC 첫째 자리 대분류 매핑 상수 (O(1) 불변 룩업)
+KDC_FIRST_CHAR_MAPPING: dict[str, GenreType] = {
+    "1": GenreType.PHILOSOPHY,
+    "2": GenreType.RELIGION,
+    "3": GenreType.SOCIAL_SCIENCE,
+    "4": GenreType.NATURAL_SCIENCE,
+    "5": GenreType.TECHNOLOGY,
+    "6": GenreType.ARTS,
+    "7": GenreType.LANGUAGE,
+    "8": GenreType.LITERATURE,
+    "9": GenreType.HISTORY,
+}
+
+# KDC 세부주제 접두사 매핑 테이블
+KDC_SUBJECT_MAPPING: dict[str, str] = {
+    # 800번대 문학 (한국 KDC 6판 기준 완벽 매핑: 810 한국, 820 중국, 830 일본, 840 영미, 850 독일, 860 프랑스, 870 스페인, 880 이탈리아, 890 기타)
+    "813.7": "SF/과학소설",
+    "814": "에세이/산문",
+    "818": "에세이/산문",
+    "813": "한국소설",
+    "811": "한국시",
+    "812": "희곡",
+    "81": "한국문학",
+    "823": "중국소설",
+    "82": "중국문학",
+    "833": "일본소설",
+    "83": "일본문학",
+    "843": "영미소설",
+    "84": "영미문학",
+    "853": "독일소설",
+    "85": "독일문학",
+    "863": "프랑스소설",
+    "86": "프랑스문학",
+    "873": "스페인소설",
+    "87": "스페인문학",
+    "883": "이탈리아소설",
+    "88": "이탈리아문학",
+    "89": "기타세계문학",
+    "8": "문학",
+    # 000번대 (현대 독서앱 실무 4대 카테고리)
+    "004": "컴퓨터/IT",
+    "005": "컴퓨터/IT",
+    "02": "독서법/글쓰기",
+    "05": "매거진/잡지",
+    "03": "인문교양/상식",
+    "00": "인문교양/상식",
+    "0": "인문교양/상식",
+    # 100번대 철학/심리
+    "18": "심리학",
+    "10": "철학/사상",
+    "11": "철학/사상",
+    "12": "철학/사상",
+    "13": "철학/사상",
+    "14": "철학/사상",
+    "15": "철학/사상",
+    "16": "철학/사상",
+    "17": "철학/사상",
+    "19": "철학/사상",
+    # 300번대 사회과학/경제
+    "32": "경제/경영",
+    "33": "사회학/사회문제",
+    # 400번대 자연과학
+    "41": "수학",
+    "42": "물리학",
+    "43": "화학",
+    "44": "천문학",
+    "45": "지구과학",
+    "47": "생명과학",
+    # 500번대 기술과학/의학/생활
+    "513.8": "미술치료/심리요법",
+    "513": "건강/의학",
+    "51": "건강/의학",
+    "59": "요리/육아/생활",
+    # 600번대 예술
+    "6": "예술/문화",
+    # 700번대 언어
+    "7": "언어/어학",
+    # 900번대 역사/지리
+    "98": "여행/지리",
+    "9": "역사/지리",
+}
+
+# 접두사 길이 역순(긴 것부터)으로 정렬된 키 튜플 (모듈 로딩 시 1회 계산)
+_SORTED_KDC_PREFIXES: tuple[str, ...] = tuple(
+    sorted(KDC_SUBJECT_MAPPING.keys(), key=len, reverse=True)
+)
+
+
 def kdc_to_genre(kdc_str: str | None) -> GenreType:
     """
-    KDC 분류기호 문자열의 첫째 자리 숫자를 판별하여 10대 대분류 ENUM으로 변환.
-    예: '813.6' -> LITERATURE, '005.133' -> GENERAL, '590' -> TECHNOLOGY
+    KDC 분류기호 문자열을 판별하여 10대 대분류 ENUM으로 변환.
+    - 000번대(총류)는 도서관 고유 용어로, 현대 독서 분류에 맞춰 실제 알맹이에 따라 4대 카테고리로 라우팅:
+      1) 004, 005 (컴퓨터과학, 프로그래밍, SW) -> TECHNOLOGY (기술과학/컴퓨터IT)
+      2) 020 (도서관학, 서지학, 독서법, 글쓰기) -> PHILOSOPHY (철학/자기계발)
+      3) 030, 001 등 (백과사전, 일반 지식, 상식) -> GENERAL (교양)
+      4) 050 (잡지, 정기간행물, 매거진) -> GENERAL (교양)
+    - 그 외 100~900번대는 KDC_FIRST_CHAR_MAPPING 상수를 통해 O(1) 매핑.
     """
     if not kdc_str or not kdc_str.strip():
         return GenreType.NONE
 
     clean = kdc_str.strip()
-    match = re.search(r"\d", clean)
+    match = re.search(r"\d+", clean)
     if not match:
         return GenreType.NONE
 
-    first_char = match.group()
-    mapping = {
-        "0": GenreType.GENERAL,
-        "1": GenreType.PHILOSOPHY,
-        "2": GenreType.RELIGION,
-        "3": GenreType.SOCIAL_SCIENCE,
-        "4": GenreType.NATURAL_SCIENCE,
-        "5": GenreType.TECHNOLOGY,
-        "6": GenreType.ARTS,
-        "7": GenreType.LANGUAGE,
-        "8": GenreType.LITERATURE,
-        "9": GenreType.HISTORY,
-    }
-    return mapping.get(first_char, GenreType.NONE)
+    digits = match.group()
+    first_char = digits[0]
+
+    # 000번대 총류 세부 라우팅 (컴퓨터/IT, 자기계발/독서법, 교양)
+    if first_char == "0":
+        if clean.startswith(("004", "005")):
+            return GenreType.TECHNOLOGY
+        if clean.startswith("02"):
+            return GenreType.PHILOSOPHY
+        return GenreType.GENERAL
+
+    return KDC_FIRST_CHAR_MAPPING.get(first_char, GenreType.NONE)
 
 
 def kdc_to_subject(kdc_str: str | None) -> str | None:
     """
     KDC 세부분류기호로부터 구체적인 세부 주제(SF, 에세이, 소설, IT 등)를 도출.
-    사용자 화면(UI)에 대분류('문학') 대신 직관적인 세부 주제를 우선 노출하기 위해 활용.
-    예: '813.7' -> 'SF/과학소설', '818' -> '에세이/산문', '005.133' -> 'IT/프로그래밍'
+    긴 접두사(세부분류)부터 우선 검사하여 순서 의존성(Order Dependency) 버그를 원천 방지.
     """
     if not kdc_str or not kdc_str.strip():
         return None
 
     clean = kdc_str.strip()
 
-    # 1. 800번대 문학 세부분류
-    if clean.startswith("813.7"):
-        return "SF/과학소설"
-    if clean.startswith(("814", "818")):
-        return "에세이/산문"
-    if clean.startswith("813"):
-        return "한국소설"
-    if clean.startswith("811"):
-        return "한국시"
-    if clean.startswith("812"):
-        return "희곡"
-    if clean.startswith("823"):
-        return "영미소설"
-    if clean.startswith("82"):
-        return "영미문학"
-    if clean.startswith("83"):
-        return "독일문학"
-    if clean.startswith("84"):
-        return "프랑스문학"
-    if clean.startswith("85"):
-        return "이탈리아문학"
-    if clean.startswith("86"):
-        return "스페인문학"
-    if clean.startswith("893"):
-        return "일본문학"
-    if clean.startswith("892"):
-        return "중국문학"
-    if clean.startswith("89"):
-        return "기타세계문학"
-    if clean.startswith("8"):
-        return "문학"
-
-    # 2. 000번대 총류/컴퓨터
-    if clean.startswith(("004", "005")):
-        return "IT/프로그래밍"
-
-    # 3. 100번대 철학/심리
-    if clean.startswith("18"):
-        return "심리학"
-    if clean.startswith(("10", "11", "12", "13", "14", "15", "16", "17", "19")):
-        return "철학/사상"
-
-    # 4. 300번대 사회과학/경제
-    if clean.startswith("32"):
-        return "경제/경영"
-    if clean.startswith("33"):
-        return "사회학/사회문제"
-
-    # 5. 400번대 자연과학
-    if clean.startswith("41"):
-        return "수학"
-    if clean.startswith("42"):
-        return "물리학"
-    if clean.startswith("43"):
-        return "화학"
-    if clean.startswith("44"):
-        return "천문학"
-    if clean.startswith("45"):
-        return "지구과학"
-    if clean.startswith("47"):
-        return "생명과학"
-
-    # 6. 500번대 기술과학
-    if clean.startswith("51"):
-        return "건강/의학"
-    if clean.startswith("59"):
-        return "요리/육아/생활"
-
-    # 7. 600번대 예술
-    if clean.startswith("6"):
-        return "예술/문화"
-
-    # 8. 700번대 언어
-    if clean.startswith("7"):
-        return "언어/어학"
-
-    # 9. 900번대 역사/지리
-    if clean.startswith("98"):
-        return "여행/지리"
-    if clean.startswith("9"):
-        return "역사/지리"
+    for prefix in _SORTED_KDC_PREFIXES:
+        if clean.startswith(prefix):
+            return KDC_SUBJECT_MAPPING[prefix]
 
     return None
 
@@ -224,11 +236,19 @@ GENRE_KEYWORD_MAPPING: dict[str, tuple[GenreType, str | None]] = {
     "기술": (GenreType.TECHNOLOGY, "기술/공학"),
     "기술/공학": (GenreType.TECHNOLOGY, "기술/공학"),
     "공학": (GenreType.TECHNOLOGY, "기술/공학"),
-    "컴퓨터": (GenreType.TECHNOLOGY, "IT/컴퓨터"),
-    "it": (GenreType.TECHNOLOGY, "IT/컴퓨터"),
-    "it/컴퓨터": (GenreType.TECHNOLOGY, "IT/컴퓨터"),
-    "프로그래밍": (GenreType.TECHNOLOGY, "IT/프로그래밍"),
-    "computer_it": (GenreType.TECHNOLOGY, "IT/컴퓨터"),
+    "컴퓨터": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "컴퓨터/it": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "it": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "it/컴퓨터": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "it/프로그래밍": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "프로그래밍": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "코딩": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "개발": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "ai": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "인공지능": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "데이터": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "컴퓨터과학": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "computer_it": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "technology": (GenreType.TECHNOLOGY, "기술과학"),
     # 예술
     "예술": (GenreType.ARTS, "예술"),
@@ -243,10 +263,26 @@ GENRE_KEYWORD_MAPPING: dict[str, tuple[GenreType, str | None]] = {
     # 역사
     "역사": (GenreType.HISTORY, "역사"),
     "history": (GenreType.HISTORY, "역사"),
-    # 총류
-    "총류": (GenreType.GENERAL, "총류"),
-    "총류/교양": (GenreType.GENERAL, "총류"),
-    "general": (GenreType.GENERAL, "총류"),
+    # 교양 (총류 000 알맹이 분할: 인문교양/상식, 매거진/잡지)
+    "교양": (GenreType.GENERAL, "인문교양/상식"),
+    "인문교양": (GenreType.GENERAL, "인문교양/상식"),
+    "인문/교양": (GenreType.GENERAL, "인문교양/상식"),
+    "상식": (GenreType.GENERAL, "인문교양/상식"),
+    "백과사전": (GenreType.GENERAL, "인문교양/상식"),
+    "사전": (GenreType.GENERAL, "인문교양/상식"),
+    "지식": (GenreType.GENERAL, "인문교양/상식"),
+    "잡학": (GenreType.GENERAL, "인문교양/상식"),
+    "잡지": (GenreType.GENERAL, "매거진/잡지"),
+    "매거진": (GenreType.GENERAL, "매거진/잡지"),
+    "간행물": (GenreType.GENERAL, "매거진/잡지"),
+    "magazine": (GenreType.GENERAL, "매거진/잡지"),
+    "총류": (GenreType.GENERAL, "교양"),
+    "총류/교양": (GenreType.GENERAL, "교양"),
+    "general": (GenreType.GENERAL, "교양"),
+    # 독서법 / 글쓰기 / 자기계발 (020번대 연계)
+    "독서법": (GenreType.PHILOSOPHY, "독서법/글쓰기"),
+    "글쓰기": (GenreType.PHILOSOPHY, "독서법/글쓰기"),
+    "작문": (GenreType.PHILOSOPHY, "독서법/글쓰기"),
     # 기타 / 미분류
     "none": (GenreType.NONE, None),
     "기타": (GenreType.NONE, None),
@@ -255,14 +291,103 @@ GENRE_KEYWORD_MAPPING: dict[str, tuple[GenreType, str | None]] = {
 }
 
 
+SF_OVERRIDABLE_SUBJECTS: frozenset[str] = frozenset(
+    {
+        "문학",
+        "소설",
+        "한국문학",
+        "한국소설",
+        "영미소설",
+        "영미문학",
+        "중국소설",
+        "중국문학",
+        "일본소설",
+        "일본문학",
+        "독일소설",
+        "독일문학",
+        "프랑스소설",
+        "프랑스문학",
+        "스페인소설",
+        "스페인문학",
+        "이탈리아소설",
+        "이탈리아문학",
+        "기타세계문학",
+        "장르소설",
+    }
+)
+
+SF_KEYWORDS: tuple[str, ...] = (
+    "sf",
+    "과학소설",
+    "우주",
+    "외계",
+    "화성",
+    "달세계",
+    "안드로이드",
+    "사이보그",
+    "타임머신",
+    "스페이스",
+    "사이언스 픽션",
+    "science fiction",
+)
+
+
+THERAPY_KEYWORDS: tuple[str, ...] = (
+    "미술치료",
+    "그림의 힘",
+    "심리치료",
+    "마음치유",
+    "예술치료",
+)
+
+
+def refine_subject_by_keywords(
+    title: str | None,
+    subject: str | None,
+    description: str | None = None,
+) -> str | None:
+    """
+    KDC 분류 체계의 한계(외국 문학/소설의 SF/장르 미분류, 미술치료의 기술과학 오분류)를 보완하기 위한 스마트 오버라이드.
+    - 1) 문학/소설군 도서의 제목/소개글에 SF 키워드가 포함되어 있으면 'SF/과학소설'로 자동 보정.
+    - 2) 도서 제목/소개글에 '미술치료', '그림의 힘' 등 심리/치유 키워드가 있으면 '미술치료/심리요법'으로 보정.
+    """
+    target_subject = (subject or "").strip()
+    text_to_check = f"{title or ''} {description or ''}".lower()
+    if not text_to_check.strip():
+        return subject
+
+    # 1. 미술치료 / 심리치유 키워드 오버라이드 (기술과학/건강/의학/미분류 등으로 빠지는 것 방지)
+    if not target_subject or target_subject in (
+        "건강/의학",
+        "기술과학",
+        "인문교양/상식",
+        "기타/미분류",
+        "문학",
+    ):
+        for kw in THERAPY_KEYWORDS:
+            if kw in text_to_check:
+                return "미술치료/심리요법"
+
+    # 2. SF 키워드 오버라이드
+    can_override_sf = not target_subject or target_subject in SF_OVERRIDABLE_SUBJECTS
+    if can_override_sf:
+        for kw in SF_KEYWORDS:
+            if kw in text_to_check:
+                return "SF/과학소설"
+
+    return subject
+
+
 def parse_to_genre_and_subject(
-    genre_input: object,
+    genre_input: str | GenreType | None,
     current_subject: str | None = None,
     kdc_str: str | None = None,
+    title: str | None = None,
 ) -> tuple[GenreType, str | None]:
     """
     국문, 영문, 키워드, Enum 인스턴스, 또는 KDC 분류번호로부터
     (표준 GenreType 대분류, 세부 주제 subject)를 유연하게 파싱.
+    도서 제목(title)이 주어지면 SF 등 키워드 기반 스마트 오버라이드 수행.
     """
     final_genre: GenreType = GenreType.NONE
     inferred_subject: str | None = None
@@ -303,7 +428,17 @@ def parse_to_genre_and_subject(
         else inferred_subject
     )
 
+    # 도서 제목/설명 기반 SF/치유 키워드 스마트 오버라이드
+    if title:
+        final_subject = refine_subject_by_keywords(title, final_subject)
+        # SF로 보정되었는데 장르가 NONE이거나 미분류면 문학(LITERATURE)으로 승격
+        if final_subject == "SF/과학소설" and final_genre == GenreType.NONE:
+            final_genre = GenreType.LITERATURE
+        elif final_subject == "미술치료/심리요법" and final_genre == GenreType.NONE:
+            final_genre = GenreType.PHILOSOPHY
+
     return final_genre, final_subject
+
 
 
 def parse_page_number(page_str: str | None) -> int | None:
@@ -315,10 +450,28 @@ def parse_page_number(page_str: str | None) -> int | None:
 
 
 def parse_publish_date(date_str: str | None) -> str | None:
-    """국립중앙도서관 PUBLISH_PREDATE (YYYYMMDD) 형식을 YYYY-MM-DD로 변환"""
+    """
+    국립중앙도서관 및 서지 데이터의 다양한 발행일자 형식을 유연하게 정규화.
+    - 8자리 (YYYYMMDD): '20231225' -> '2023-12-25'
+    - 8자리 중 월/일 미상 ('20230000'): '2023' (연도만 추출)
+    - 6자리 (YYYYMM): '202312' -> '2023-12'
+    - 4자리 (YYYY): '1998' -> '1998'
+    """
     if not date_str:
         return None
     cleaned = re.sub(r"\D", "", date_str)
-    if len(cleaned) == 8:
+    length = len(cleaned)
+
+    if length == 8:
+        # 00월 00일 등 미상 데이터 처리 (예: 20230000 -> 2023)
+        if cleaned[4:8] == "0000":
+            return cleaned[:4]
+        if cleaned[6:8] == "00":
+            return f"{cleaned[:4]}-{cleaned[4:6]}"
         return f"{cleaned[:4]}-{cleaned[4:6]}-{cleaned[6:8]}"
+    if length == 6:
+        return f"{cleaned[:4]}-{cleaned[4:6]}"
+    if length == 4:
+        return cleaned[:4]
+
     return None

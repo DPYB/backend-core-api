@@ -26,6 +26,8 @@
 - **Phase 21 (타 서비스 통신 계약 및 통합 연계 완결)**: `frontend-reader-web` 및 `backend-ai-agent` 통신 계약 전수 분석 및 완벽 호환 보장: 페이징 응답 DTO에 프론트엔드 호환 `books` 및 `scraps` 필드 듀얼 직렬화(`LibraryBookPageResponse`, `ScrapPageResponse`), 도서 단건 조회 별칭 엔드포인트(`GET /api/v1/books/{book_id}`) 추가, 도서 검색(`GET /api/v1/books/search`)에서 ISBN 및 키워드 통합 검색과 선택적 인증(`get_optional_member_id`) 지원, 소셜 로그인 응답에 회원 프로필(`member`) 즉시 반환 지원 (Core API 81개 테스트 100% Pass, AI Agent 100개 테스트 100% Pass, Frontend 빌드 성공 검증)
 - **Phase 22 (소셜 로그인 실환경 스펙 확정 및 환경변수 템플릿 정비)**: Google OAuth 2.0 Web Client ID(`GOOGLE_CLIENT_ID`) 및 Kakao REST API Key/Client ID(`KAKAO_CLIENT_ID`) 실환경 설정 스펙 확정, Render 배포용 `.env.example` 템플릿(Supabase Pooler, JWT, OAuth, 외부 API, CORS) 전면 정비 완료
 - **Phase 23 (중앙 Git Hooks 표준 연동)**: `.githooks/pre-commit` 등록 및 `core.hooksPath .githooks` 바인딩, 코드 변경 시 STATE.md 동반 갱신 알림 훅 검증 완료
+- **Phase 24 (KDC 800번대 KDC 6판 표준화 & 외국 SF 소설 스마트 오버라이드)**: DDC 혼동 버그를 바로잡아 KDC 제6판 기준 800번대 문학 세부분류(810 한국, 820 중국, 830 일본, 840 영미, 850 독일, 860 프랑스 등) 전면 교정, KDC 외국소설 장르 미분류 한계를 극복하기 위해 《마션》·《헤일메리》 등 도서 제목/설명 SF 키워드 기반 `SF/과학소설` 스마트 오버라이드 및 대분류 승격 로직 구축 완료 (총 83개 테스트 100% Pass)
+- **Phase 25 (화면 노출 우선순위 Subject 1순위 보장 & 510번대 치료/건강 라우팅 보강)**: 프론트엔드가 `genreName` 또는 `displayGenre` 어느 필드를 참조하더라도 세부 주제(`subject`)가 존재할 때 1순위로 노출되도록 DTO 2중 방어 조치 구현, KDC 513.8(미술치료/심리요법) 및 키워드("미술치료", "그림의 힘", "심리치료") 스마트 오버라이드 연동, 콘솔+회전 파일 듀얼 로깅(`logs/app.log`) 구축 완료 (총 83개 테스트 100% Pass)
 
 
 

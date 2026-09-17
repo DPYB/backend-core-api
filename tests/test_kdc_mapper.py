@@ -9,7 +9,12 @@ from app.schemas.search import ExternalBook
 
 
 def test_kdc_to_genre_mapping():
-    assert kdc_to_genre("005.133") == GenreType.GENERAL
+    # 000번대 현대 독서앱 4대 분류 매핑: 004/005는 TECHNOLOGY(컴퓨터/IT), 020은 PHILOSOPHY(독서법/글쓰기), 030/001/050은 GENERAL(교양/매거진)
+    assert kdc_to_genre("005.133") == GenreType.TECHNOLOGY
+    assert kdc_to_genre("004.1") == GenreType.TECHNOLOGY
+    assert kdc_to_genre("029.1") == GenreType.PHILOSOPHY
+    assert kdc_to_genre("030") == GenreType.GENERAL
+    assert kdc_to_genre("050") == GenreType.GENERAL
     assert kdc_to_genre("100") == GenreType.PHILOSOPHY
     assert kdc_to_genre("210") == GenreType.RELIGION
     assert kdc_to_genre("330") == GenreType.SOCIAL_SCIENCE
@@ -25,6 +30,7 @@ def test_kdc_to_genre_mapping():
 
 
 def test_genre_korean_names():
+    assert GENRE_KOREAN_NAMES[GenreType.GENERAL] == "교양"
     assert GENRE_KOREAN_NAMES[GenreType.LITERATURE] == "문학"
     assert GENRE_KOREAN_NAMES[GenreType.TECHNOLOGY] == "기술과학"
     assert GENRE_KOREAN_NAMES[GenreType.NONE] == "기타/미분류"
@@ -40,6 +46,10 @@ def test_parse_page_number():
 def test_parse_publish_date():
     assert parse_publish_date("20231225") == "2023-12-25"
     assert parse_publish_date("2023-12-25") == "2023-12-25"
+    assert parse_publish_date("20230000") == "2023"
+    assert parse_publish_date("20230500") == "2023-05"
+    assert parse_publish_date("202312") == "2023-12"
+    assert parse_publish_date("1998") == "1998"
     assert parse_publish_date(None) is None
     assert parse_publish_date("123") is None
 
@@ -60,13 +70,30 @@ def test_external_book_computed_genre_name():
 def test_kdc_to_subject_mapping():
     from app.core.kdc_mapper import kdc_to_subject
 
+    # KDC 6판 800번대 문학 매핑 검증
     assert kdc_to_subject("813.7") == "SF/과학소설"
     assert kdc_to_subject("814") == "에세이/산문"
     assert kdc_to_subject("818") == "에세이/산문"
     assert kdc_to_subject("813.6") == "한국소설"
-    assert kdc_to_subject("823") == "영미소설"
-    assert kdc_to_subject("893.3") == "일본문학"
-    assert kdc_to_subject("005.133") == "IT/프로그래밍"
+    assert kdc_to_subject("810") == "한국문학"
+    assert kdc_to_subject("823") == "중국소설"
+    assert kdc_to_subject("820") == "중국문학"
+    assert kdc_to_subject("833") == "일본소설"
+    assert kdc_to_subject("830") == "일본문학"
+    assert kdc_to_subject("843") == "영미소설"  # 마션, 프로젝트 헤일메리
+    assert kdc_to_subject("840") == "영미문학"
+    assert kdc_to_subject("853") == "독일소설"
+    assert kdc_to_subject("850") == "독일문학"
+    assert kdc_to_subject("863") == "프랑스소설"
+    assert kdc_to_subject("860") == "프랑스문학"
+    assert kdc_to_subject("870") == "스페인문학"
+    assert kdc_to_subject("880") == "이탈리아문학"
+    assert kdc_to_subject("890") == "기타세계문학"
+    # 기타 분류
+    assert kdc_to_subject("005.133") == "컴퓨터/IT"
+    assert kdc_to_subject("029") == "독서법/글쓰기"
+    assert kdc_to_subject("050") == "매거진/잡지"
+    assert kdc_to_subject("030") == "인문교양/상식"
     assert kdc_to_subject("189") == "심리학"
     assert kdc_to_subject("320") == "경제/경영"
     assert kdc_to_subject("510") == "건강/의학"
@@ -93,7 +120,19 @@ def test_parse_to_genre_and_subject():
 
     genre, sub = parse_to_genre_and_subject("IT/컴퓨터")
     assert genre == GenreType.TECHNOLOGY
-    assert sub == "IT/컴퓨터"
+    assert sub == "컴퓨터/IT"
+
+    genre, sub = parse_to_genre_and_subject("인문교양")
+    assert genre == GenreType.GENERAL
+    assert sub == "인문교양/상식"
+
+    genre, sub = parse_to_genre_and_subject("잡지")
+    assert genre == GenreType.GENERAL
+    assert sub == "매거진/잡지"
+
+    genre, sub = parse_to_genre_and_subject("독서법")
+    assert genre == GenreType.PHILOSOPHY
+    assert sub == "독서법/글쓰기"
 
     # 2. 영문 / 레거시 키워드 입력
     genre, sub = parse_to_genre_and_subject("literature")
@@ -117,14 +156,61 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.LITERATURE
     assert sub == "우주 SF"
 
-    # 5. 알 수 없는 사용자 지정 텍스트
-    genre, sub = parse_to_genre_and_subject("신비한우주탐험")
-    assert genre == GenreType.NONE
-    assert sub == "신비한우주탐험"
+    # 6. 도서 제목 기반 외국 SF 소설 오버라이드 (마션, 프로젝트 헤일메리 등)
+    genre, sub = parse_to_genre_and_subject(
+        "843",  # KDC 843 -> 영미소설
+        title="마션 (화성에서 살아남기)",
+    )
+    assert genre == GenreType.LITERATURE
+    assert sub == "SF/과학소설"
+
+    # 제목에 SF 키워드가 없으면 영미소설 유지
+    genre, sub = parse_to_genre_and_subject(
+        "843",
+        title="위대한 개츠비",
+    )
+    assert genre == GenreType.LITERATURE
+    assert sub == "영미소설"
 
 
-def test_display_genre_prefers_subject_over_genre_name():
-    # subject가 있으면 displayGenre는 subject
+def test_refine_subject_by_keywords():
+    from app.core.kdc_mapper import refine_subject_by_keywords
+
+    # 영미소설 -> 마션(화성 키워드) -> SF/과학소설
+    assert (
+        refine_subject_by_keywords("마션", "영미소설", "화성에 고립된 우주비행사")
+        == "SF/과학소설"
+    )
+    assert (
+        refine_subject_by_keywords("프로젝트 헤일메리", "영미소설", "우주를 구하기 위한 미션")
+        == "SF/과학소설"
+    )
+    assert (
+        refine_subject_by_keywords("어두운 숲", "중국소설", "외계 문명의 침공")
+        == "SF/과학소설"
+    )
+    assert (
+        refine_subject_by_keywords("듄 (DUNE)", "영미소설", "SF 명작")
+        == "SF/과학소설"
+    )
+    # SF 키워드가 없는 일반 소설은 원본 유지
+    assert refine_subject_by_keywords("오만과 편견", "영미소설") == "영미소설"
+    assert refine_subject_by_keywords("노르웨이의 숲", "일본소설") == "일본소설"
+    # 1. 미술치료 / 그림의 힘 키워드 오버라이드
+    assert (
+        refine_subject_by_keywords("그림의 힘", "건강/의학", "최고의 명화들이 주는 치유의 에너지를 담은 책")
+        == "미술치료/심리요법"
+    )
+    assert (
+        refine_subject_by_keywords("누구나 쉽게 배우는 미술치료", "기타/미분류")
+        == "미술치료/심리요법"
+    )
+    # 이미 구체적 주제가 있는 경우 유지
+    assert refine_subject_by_keywords("우주론 강의", "천문학") == "천문학"
+
+
+def test_display_genre_and_genre_name_prefer_subject():
+    # subject가 있으면 displayGenre와 genreName 모두 subject (화면 1순위 보장)
     book_with_sub = ExternalBook(
         title="우리가 빛의 속도로 갈 수 없다면",
         author="김초엽",
@@ -132,9 +218,11 @@ def test_display_genre_prefers_subject_over_genre_name():
         subject="SF/과학소설",
     )
     dump1 = book_with_sub.model_dump(by_alias=True)
+    assert dump1["subject"] == "SF/과학소설"
+    assert dump1["genreName"] == "SF/과학소설"
     assert dump1["displayGenre"] == "SF/과학소설"
 
-    # subject가 없으면 displayGenre는 genreName ("문학")
+    # subject가 없으면 genreName 및 displayGenre는 KDC 한글 대분류 ("문학")
     book_without_sub = ExternalBook(
         title="일반 문학책",
         author="작가",
@@ -142,4 +230,6 @@ def test_display_genre_prefers_subject_over_genre_name():
         subject=None,
     )
     dump2 = book_without_sub.model_dump(by_alias=True)
+    assert dump2["subject"] is None
+    assert dump2["genreName"] == "문학"
     assert dump2["displayGenre"] == "문학"

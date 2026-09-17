@@ -22,6 +22,9 @@ class ExternalBook(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
+        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
+        if self.subject and self.subject.strip():
+            return self.subject.strip()
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -51,6 +54,9 @@ class SearchLibraryBookDetail(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
+        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
+        if self.subject and self.subject.strip():
+            return self.subject.strip()
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field

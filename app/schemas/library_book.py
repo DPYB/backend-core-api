@@ -33,9 +33,13 @@ class CreateLibraryBookRequest(CamelModel):
             raw_genre = data.get("genre", GenreType.NONE)
             raw_subject = data.get("subject")
             raw_kdc = data.get("kdc")
+            raw_title = data.get("title")
 
             parsed_genre, inferred_subject = parse_to_genre_and_subject(
-                raw_genre, current_subject=raw_subject, kdc_str=raw_kdc
+                raw_genre,
+                current_subject=raw_subject,
+                kdc_str=raw_kdc,
+                title=raw_title,
             )
             data["genre"] = parsed_genre
             data["subject"] = inferred_subject
@@ -64,6 +68,9 @@ class CreateLibraryBookResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
+        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
+        if self.subject and self.subject.strip():
+            return self.subject.strip()
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -101,6 +108,9 @@ class LibraryBookItemResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
+        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
+        if self.subject and self.subject.strip():
+            return self.subject.strip()
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -148,6 +158,9 @@ class LibraryBookDetailResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
+        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
+        if self.subject and self.subject.strip():
+            return self.subject.strip()
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -184,9 +197,13 @@ class UpdateLibraryBookRequest(CamelModel):
             raw_genre = data.get("genre", GenreType.NONE)
             raw_subject = data.get("subject")
             raw_kdc = data.get("kdc")
+            raw_title = data.get("title")
 
             parsed_genre, inferred_subject = parse_to_genre_and_subject(
-                raw_genre, current_subject=raw_subject, kdc_str=raw_kdc
+                raw_genre,
+                current_subject=raw_subject,
+                kdc_str=raw_kdc,
+                title=raw_title,
             )
             data["genre"] = parsed_genre
             data["subject"] = inferred_subject

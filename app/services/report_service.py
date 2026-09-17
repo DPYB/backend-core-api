@@ -33,7 +33,7 @@ from app.schemas.report import (
 
 GENRE_NAMES: dict[GenreType, str] = {
     GenreType.NONE: "기타",
-    GenreType.GENERAL: "총류",
+    GenreType.GENERAL: "교양",
     GenreType.PHILOSOPHY: "철학",
     GenreType.RELIGION: "종교",
     GenreType.SOCIAL_SCIENCE: "사회과학",

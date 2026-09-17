@@ -56,7 +56,8 @@ async def test_search_already_registered_book(
     assert data["libraryBook"] is not None
     assert data["libraryBook"]["title"] == "클린 코드"
     assert data["libraryBook"]["genre"] == "TECHNOLOGY"
-    assert data["libraryBook"]["genreName"] == "기술과학"
+    assert data["libraryBook"]["genreName"] == "컴퓨터 프로그래밍"  # Subject 1순위 노출
+    assert data["libraryBook"]["displayGenre"] == "컴퓨터 프로그래밍"
     assert data["libraryBook"]["progress"] == 20.5
 
 
@@ -84,7 +85,8 @@ async def test_search_unregistered_book_found(client: AsyncClient):
         assert data["libraryBook"] is None
         assert data["book"] is not None
         assert data["book"]["title"] == "리팩터링 2판"
-        assert data["book"]["genreName"] == "기술과학"
+        assert data["book"]["genreName"] == "소프트웨어 리팩터링"  # Subject 1순위 노출
+        assert data["book"]["displayGenre"] == "소프트웨어 리팩터링"
 
 
 @pytest.mark.asyncio
@@ -267,7 +269,7 @@ async def test_national_library_kyobo_cdn_fallback():
         assert book.subject == "SF/과학소설"
         assert book.display_genre == "SF/과학소설"
         assert book.genre == GenreType.LITERATURE
-        assert book.genre_name == "문학"
+        assert book.genre_name == "SF/과학소설"  # Subject 1순위 노출
 
 
 @pytest.mark.asyncio
@@ -335,3 +337,40 @@ async def test_get_book_by_id_alias(client: AsyncClient, db_session: AsyncSessio
     assert data["title"] == "데미안"
     assert data["readingStatus"] == "COMPLETED"
     assert data["displayGenre"] == "성장소설"
+
+
+@pytest.mark.asyncio
+async def test_national_library_martian_sf_override():
+    """국립중앙도서관에서 KDC 843(영미소설)로 내려오는 마션이 제목 SF 키워드로 인해 SF/과학소설로 보정되는지 검증"""
+    from unittest.mock import MagicMock
+
+    from app.services.national_library import NationalLibraryClient
+
+    client = NationalLibraryClient(cert_key="test-key")
+    client.clear_cache()
+
+    mock_resp_data = {
+        "TOTAL_COUNT": "1",
+        "docs": [
+            {
+                "TITLE": "마션 (어느 외톨이 우주인의 화성 생존기)",
+                "AUTHOR": "앤디 위어",
+                "EA_ISBN": "9788925556277",
+                "KDC": "843.6",
+                "PAGE": "599p",
+            }
+        ],
+    }
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = mock_resp_data
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_response
+        book = await client.lookup_by_isbn("9788925556277")
+        assert book is not None
+        assert book.title == "마션 (어느 외톨이 우주인의 화성 생존기)"
+        assert book.genre == GenreType.LITERATURE
+        assert book.subject == "SF/과학소설"
+        assert book.display_genre == "SF/과학소설"
+

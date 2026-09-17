@@ -249,13 +249,28 @@
 
 ---
 
-## 2026-09-16: 중앙 Git Hooks 표준 연동 및 pre-commit 훅 활성화
+## 2026-09-17: KDC 제6판 문학(800) 표준 교정 및 SF 소설 키워드 스마트 오버라이드
 - **진행한 작업**:
-  - DPYB 조직 개발 표준에 맞춰 `.githooks/pre-commit` 등록 및 실행 권한(`chmod +x`) 부여.
-  - `core.hooksPath .githooks` 바인딩을 통해 커밋 시 코드 변경 사항이 있으나 `.harness/STATE.md`가 수정되지 않았을 때 non-blocking 안내 경고 출력 보장.
-  - `uv run pytest` (81 passed) 및 `uv run ruff check .` (All checks passed) 전체 자가 검증 통과.
+  - `app/core/kdc_mapper.py`: DDC 서양식 문학 분류가 섞여 있던 `KDC_SUBJECT_MAPPING` 800번대를 한국도서관협회 KDC 제6판 기준(810 한국, 820 중국, 830 일본, 840 영미, 850 독일, 860 프랑스, 870 스페인, 880 이탈리아, 890 기타)으로 전면 교정. 《마션》(843)이 프랑스문학으로 오역되던 버그 해결.
+  - `refine_subject_by_keywords`: 외국 소설에 대해 세부 장르 번호를 부여하지 않는 KDC의 한계를 극복하기 위해, 도서 제목 및 설명에서 SF 키워드(`SF`, `과학소설`, `우주`, `외계`, `화성`, `사이언스 픽션` 등)를 검사하여 `SF/과학소설`로 자동 보정 및 대분류 승격하는 스마트 오버라이드 로직 구현.
+  - `app/services/national_library.py`: 국립중앙도서관 API 서지정보 파싱 시 도서 제목/설명 기반 `refine_subject_by_keywords` 오버라이드 적용.
+  - `app/schemas/library_book.py`: 서재 도서 등록(`CreateLibraryBookRequest`) 및 수정(`UpdateLibraryBookRequest`) 모델 검증기에서 도서 제목(`title`)을 연동하여 SF 키워드 오버라이드 자동 반영.
+  - `tests/test_kdc_mapper.py`, `tests/test_search.py`: KDC 843(영미소설), 820(중국), 830(일본) 매핑 및 《마션》 실서지 데이터 검색 시 `SF/과학소설`로 보정되는 단위/통합 테스트 추가.
+  - 총 83개 단위/통합 테스트 100% 통과 및 `ruff check` 0 에러 검증.
 - **다음 세션에서 할 일**:
-  - PR 생성 및 사람 직접 머지 확인 후 배포 준비 진행.
+  - 실환경 Render 배포 및 E2E 브라우저 최종 스모크 테스트.
+
+## 2026-09-17: 화면 노출 우선순위 Subject 1순위 전면 보장 및 510번대 치료/건강 라우팅 보강
+- **진행한 작업**:
+  - `app/schemas/library_book.py`, `app/schemas/search.py`: 프론트엔드가 `genreName`을 직접 참조하든 `displayGenre`를 참조하든 상관없이, 세부 주제(`subject`)가 존재할 경우 최우선으로 반환하도록 DTO 레벨 2중 방어 조치 구현.
+  - `app/core/kdc_mapper.py`: KDC 513.8(미술치료/심리요법) 및 51(건강/의학) 매핑 보강, `THERAPY_KEYWORDS`("미술치료", "그림의 힘", "심리치료", "마음치유", "예술치료") 스마트 오버라이드 및 PHILOSOPHY 승격 연동.
+  - `app/main.py`: 콘솔(stdout) 및 10MB 크기 회전 파일(`logs/app.log`) 듀얼 로깅 파이프라인 구축 및 Uvicorn 로거 통합.
+  - `tests/test_books.py`, `tests/test_search.py`, `tests/test_kdc_mapper.py`: 세부 주제 우선순위 반영 및 신규 매핑/키워드 검증 테스트 갱신 완료.
+  - 단위/통합 테스트 83개 100% 통과 (소요시간 2.14s), `ruff check`, `mypy app` 검사 100% 무결점 통과.
+- **다음 세션에서 할 일**:
+  - Render Web Service 배포 및 실환경 헬스체크 연동 검증.
+
+
 
 
 
