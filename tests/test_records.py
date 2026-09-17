@@ -82,14 +82,16 @@ async def test_create_get_and_delete_records(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_record_without_member_id(client: AsyncClient):
+    """AUTH_DISABLED 테스트 환경에서는 X-Member-Id 없이도 DEFAULT_TEST_MEMBER_ID로 자동 인증되어 201 반환."""
     payload = {
         "book_id": 101,
         "title": "테스트",
         "content": "내용",
     }
     response = await client.post("/api/v1/records", json=payload)
-    # Header 누락 시 422 Unprocessable Entity
-    assert response.status_code == 422
+    # AUTH_DISABLED=True 테스트 환경에서는 Bearer JWT / X-Member-Id 없이도
+    # DEFAULT_TEST_MEMBER_ID로 자동 인증 처리 → 201 Created
+    assert response.status_code == 201
 
 
 @pytest.mark.asyncio

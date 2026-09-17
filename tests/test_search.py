@@ -373,4 +373,3 @@ async def test_national_library_martian_sf_override():
         assert book.genre == GenreType.LITERATURE
         assert book.subject == "SF/과학소설"
         assert book.display_genre == "SF/과학소설"
-

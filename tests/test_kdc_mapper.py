@@ -182,7 +182,9 @@ def test_refine_subject_by_keywords():
         == "SF/과학소설"
     )
     assert (
-        refine_subject_by_keywords("프로젝트 헤일메리", "영미소설", "우주를 구하기 위한 미션")
+        refine_subject_by_keywords(
+            "프로젝트 헤일메리", "영미소설", "우주를 구하기 위한 미션"
+        )
         == "SF/과학소설"
     )
     assert (
@@ -190,15 +192,16 @@ def test_refine_subject_by_keywords():
         == "SF/과학소설"
     )
     assert (
-        refine_subject_by_keywords("듄 (DUNE)", "영미소설", "SF 명작")
-        == "SF/과학소설"
+        refine_subject_by_keywords("듄 (DUNE)", "영미소설", "SF 명작") == "SF/과학소설"
     )
     # SF 키워드가 없는 일반 소설은 원본 유지
     assert refine_subject_by_keywords("오만과 편견", "영미소설") == "영미소설"
     assert refine_subject_by_keywords("노르웨이의 숲", "일본소설") == "일본소설"
     # 1. 미술치료 / 그림의 힘 키워드 오버라이드
     assert (
-        refine_subject_by_keywords("그림의 힘", "건강/의학", "최고의 명화들이 주는 치유의 에너지를 담은 책")
+        refine_subject_by_keywords(
+            "그림의 힘", "건강/의학", "최고의 명화들이 주는 치유의 에너지를 담은 책"
+        )
         == "미술치료/심리요법"
     )
     assert (

@@ -270,6 +270,15 @@
 - **다음 세션에서 할 일**:
   - Render Web Service 배포 및 실환경 헬스체크 연동 검증.
 
+## 2026-09-17: 독서 기록 라우터 인증 의존성 표준화 (JWT & X-Member-Id 듀얼 지원)
+- **진행한 작업**:
+  - `app/routers/records.py`: 하드코딩된 필수 `Header(..., alias="X-Member-Id")` 주입 방식을 전역 표준인 `Depends(get_authenticated_member_id)`로 전면 교체. 이를 통해 Bearer JWT 토큰과 `X-Member-Id` 헤더를 모두 수용하고 `AUTH_DISABLED` 테스트 환경에서도 일관되게 동작하도록 보장.
+  - `tests/test_records.py`: 의존성 통일에 따른 인증 테스트 케이스 최신화 (`AUTH_DISABLED` 테스트 환경 자동 인증 대응).
+  - 총 83개 단위/통합 테스트 100% 통과 및 `ruff check` 검증 완료.
+- **다음 세션에서 할 일**:
+  - Render 배포 및 실환경 E2E 점검.
+
+
 
 
 
