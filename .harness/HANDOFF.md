@@ -278,6 +278,20 @@
 - **다음 세션에서 할 일**:
   - Render 배포 및 실환경 E2E 점검.
 
+## 2026-09-17: 독서 세션 도서별 하위 리소스 API & 월간 리포트 통계 확장
+- **진행한 작업**:
+  - `alembic/versions/006_expand_reading_sessions.py`: `record.reading_sessions` 테이블에 `duration_seconds`, `start_time`, `end_time`, `memo`, `updated_at` 컬럼 추가 및 월간 집계/도서별 조회를 위한 인덱스(`idx_reading_sessions_member_month`, `idx_reading_sessions_book`) 생성. 기존 데이터와의 양방향 호환 유지.
+  - `app/models/reading_session.py`: `ReadingSession` ORM 모델에 신규 컬럼 매핑.
+  - `app/schemas/reading_session.py`: 초 단위(`duration_seconds` / `duration`) 및 분 단위(`duration_minutes`), 페이지 필드(`page_number` / `end_page`) 유연 지원 DTO 및 도서별 누적 통계 응답 DTO `BookReadingSessionListResponse` 구현.
+  - `app/schemas/report.py`: `ReadingHabits` 모델에 `total_session_count` (총 세션 횟수) 및 `avg_session_duration_minutes` (평균 독서 집중 시간, 분 단위) 필드 추가.
+  - `app/services/reading_session_service.py`: `create_session` 및 `get_book_sessions` 구현. 도서 소유권 검증 및 세션 등록 시 도서의 `current_page`, `progress`, 완독 판정(`completed_at`) 단일 트랜잭션 동기화.
+  - `app/services/report_service.py`: 월간 리포트 정량 통계 집계 시 `duration_seconds` 기반 총 독서 시간(`total_duration_minutes`) 정밀 계산, `totalSessionCount`, `avgSessionDurationMinutes`, 시작/종료 시각 기준 시간대(`timeDistribution`) 및 요일(`weekdayDistribution`) 집계 고도화.
+  - `app/routers/reading_sessions.py`: 도서별 독서 세션 등록/조회 엔드포인트(`POST/GET /api/v1/books/{book_id}/reading-sessions`, `/api/v1/library/books/{book_id}/reading-sessions` 별칭 지원) 바인딩.
+  - `tests/test_reading_sessions.py`, `tests/test_monthly_reports.py`: 신규 엔드포인트 및 통계 확장 통합 테스트 추가, 총 84개 테스트 100% Pass 및 `ruff check`, `mypy app` 무결점 검증.
+- **다음 세션에서 할 일**:
+  - Render 실환경 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
+  - `frontend-reader-web` 및 `backend-ai-agent` 연동 점검.
+
 
 
 

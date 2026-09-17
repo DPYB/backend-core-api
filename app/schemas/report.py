@@ -25,6 +25,10 @@ class MonthlyOverview(CamelModel):
 
 
 class ReadingHabits(CamelModel):
+    total_session_count: int = Field(default=0, description="이번 달 총 세션 횟수")
+    avg_session_duration_minutes: float = Field(
+        default=0.0, description="1회 평균 독서 집중 시간 (분 단위)"
+    )
     weekday_distribution: dict[str, int] = Field(
         description="요일별 독서 횟수 (MON, TUE, ...)"
     )
