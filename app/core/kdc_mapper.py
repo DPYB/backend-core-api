@@ -440,7 +440,6 @@ def parse_to_genre_and_subject(
     return final_genre, final_subject
 
 
-
 def parse_page_number(page_str: str | None) -> int | None:
     """국립중앙도서관 PAGE 필드에서 정수 페이지 번호만 추출 (예: '350p' -> 350)"""
     if not page_str:

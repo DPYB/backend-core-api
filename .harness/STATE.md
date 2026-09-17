@@ -28,6 +28,4 @@
 - **Phase 23 (중앙 Git Hooks 표준 연동)**: `.githooks/pre-commit` 등록 및 `core.hooksPath .githooks` 바인딩, 코드 변경 시 STATE.md 동반 갱신 알림 훅 검증 완료
 - **Phase 24 (KDC 800번대 KDC 6판 표준화 & 외국 SF 소설 스마트 오버라이드)**: DDC 혼동 버그를 바로잡아 KDC 제6판 기준 800번대 문학 세부분류(810 한국, 820 중국, 830 일본, 840 영미, 850 독일, 860 프랑스 등) 전면 교정, KDC 외국소설 장르 미분류 한계를 극복하기 위해 《마션》·《헤일메리》 등 도서 제목/설명 SF 키워드 기반 `SF/과학소설` 스마트 오버라이드 및 대분류 승격 로직 구축 완료 (총 83개 테스트 100% Pass)
 - **Phase 25 (화면 노출 우선순위 Subject 1순위 보장 & 510번대 치료/건강 라우팅 보강)**: 프론트엔드가 `genreName` 또는 `displayGenre` 어느 필드를 참조하더라도 세부 주제(`subject`)가 존재할 때 1순위로 노출되도록 DTO 2중 방어 조치 구현, KDC 513.8(미술치료/심리요법) 및 키워드("미술치료", "그림의 힘", "심리치료") 스마트 오버라이드 연동, 콘솔+회전 파일 듀얼 로깅(`logs/app.log`) 구축 완료 (총 83개 테스트 100% Pass)
-
-
-
+- **Phase 26 (인증 의존성 통일)**: `POST /api/v1/records` 포함 records 라우터 전체 엔드포인트의 인증 방식을 하드코딩 `Header(X-Member-Id, 필수)` 에서 `get_authenticated_member_id` 의존성으로 교체 — Bearer JWT 및 X-Member-Id 헤더 모두 지원하는 아키텍처 표준 패턴으로 통일 완료 (총 83개 테스트 100% Pass)
