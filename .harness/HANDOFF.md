@@ -308,9 +308,35 @@
     - 권차/판차 혼합 KDC (`5판 813.6`, `[5] 813.6`, `813.6/005`, `K813.6`, `v.2 813.72`) 대분류/세부주제 파싱 단위 테스트 6건 추가.
     - `"개발"`, `"자기개발"`의 철학/자기계발 매핑 및 `"소프트웨어 개발"`의 컴퓨터/IT 매핑 단위 테스트 3건 추가.
     - 총 84개 단위/통합 테스트 100% Pass (2.20s), `ruff check`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+## 2026-09-18: 터미널 에러 로그(Errno 49) 원인 규명 및 해커톤 제출용 인증 플로우 검토
+- **터미널 대량 에러 로그 원인 분석 (`logs/app.log`)**:
+  - 원인: 프론트엔드 로그아웃/새로고침 시 짧은 간격으로 연속 토큰 갱신(`POST /api/v1/auth/refresh`) 및 회원 조회(`GET /api/v1/users/me`) 호출이 발생할 때, `app/db/session.py`의 SQLAlchemy 비동기 엔진에 풀 재사용(`pool_pre_ping=True`, `pool_recycle`, `pool_size`) 설정이 없어 macOS Ephemeral Port가 고갈되며 `[Errno 49] Can't assign requested address` 및 DB 커넥션 중도 끊김(`ConnectionDoesNotExistError`) 에러가 다량 발생함.
+  - 개선 방향: `create_async_engine`에 `pool_pre_ping=True`, `pool_recycle=300`, `pool_size=10`, `max_overflow=10` 보강 필요.
+- **로그인/회원가입 기능 현황 및 해커톤 플로우 검토**:
+  - 현재 백엔드는 `POST /api/v1/auth/login` 엔드포인트를 통해 이메일 기반 자동 생성(Get-or-Create, 기본책장+대표사서 지급) 및 Bearer JWT/HttpOnly 쿠키 발급이 정상 지원되는 상태.
+  - 프론트엔드의 실제 회원가입 폼(`POST /api/v1/auth/signup`) 연동 여부 및 해커톤 데모 제출 방식(간편 로그인 유지 vs 정식 회원가입 플로우 신설)에 대해 팀 내 토의 진행 중으로, 확정 시 피드백 수신 후 작업 진행 예정.
+## 2026-09-18: [Track 1] 긴급 보안 핫픽스 (X-Member-Id 인증 우회 취약점 원천 제거)
+- **사전 점검 및 사용처 조사**:
+  - `backend-core-api`, `backend-ai-agent`, `frontend-reader-web`, GitHub Actions 전수 Grep 결과, 내부 서비스 크론이나 관리자 툴에서 `X-Member-Id` 헤더를 정당하게 신뢰하는 경로는 전무함을 확인.
+  - `backend-ai-agent`는 이미 표준 Token Relay(Bearer JWT) 방식으로 Core API를 호출 중이며, 월간 리포트 프록시 호출도 정상 토큰 릴레이 동작 확인.
+  - 서버 로그(`logs/app.log`) 악용 흔적 전수 조사 결과: 비정상 member_id 주입 및 침해 흔적 0건 확인.
+- **인증 우회 로직 완전 삭제 및 서명된 Bearer JWT 단일화**:
+  - `app/core/security.py`: `get_authenticated_member_id` 및 `get_optional_member_id`에서 `Header(None, alias="X-Member-Id")` 수신 및 우선 신뢰 로직을 전격 삭제하고, 오직 서명된 Bearer JWT 토큰만을 검증하도록 단일화.
+  - `app/routers/records.py`, `app/routers/reading_sessions.py`, `app/routers/reports.py`: 라우터 인증 의존성을 `get_current_member_id`로 통일.
+- **보안 회귀 방지 테스트(`tests/test_security_bypass.py`) 구축**:
+  - `test_x_member_id_without_jwt_is_unauthorized`: JWT 서명 없이 임의의 `X-Member-Id`만 전송 시 `401 UNAUTHORIZED` 반환 차단 검증.
+  - `test_spoofed_x_member_id_is_ignored_when_jwt_present`: 유효한 JWT와 타인의 위조 `X-Member-Id`를 동시 전송하더라도, 위조 헤더를 완전히 무시하고 JWT 내 `sub` 회원으로만 안전하게 귀속됨을 검증.
+  - `test_optional_member_id_ignores_x_member_id`: 선택적 인증 엔드포인트에서도 위조 헤더 단독 전송 시 비로그인(None) 처리 검증.
+  - `tests/test_records.py`: 레거시 `X-Member-Id` 테스트 케이스들을 정식 Bearer JWT 토큰 방식으로 전면 교체.
+- **하네스 문서 동기화**:
+  - `AGENTS.md` 및 `.harness/ARCHITECTURE.md`, `.harness/DECISIONS.md`: 레거시 헤더 병행 지원 문구를 삭제하고 Bearer JWT 단일 서명 검증 불변식 명문화.
+- **품질 검증**:
+  - 총 87개 단위/통합 테스트 100% Pass (2.10s), `ruff check --fix .` 및 `mypy app` 0 에러/경고 통과.
 - **다음 세션에서 할 일**:
-  - Render Web Service 실환경 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
-  - `frontend-reader-web` 및 `backend-ai-agent` 연동 점검.
+  - 본 보안 핫픽스 PR 생성 및 리뷰 요청.
+  - 팀원 토의 결과 확정 시 피드백에 맞춰 정식/체험 인증 플로우 작업 진행.
+
+
 
 
 

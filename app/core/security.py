@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import Depends, Header
+from fastapi import Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
@@ -109,6 +109,7 @@ async def get_current_member_id(
 ) -> uuid.UUID:
     """
     현재 인증된 회원의 member_id (UUID)를 반환하는 FastAPI 의존성.
+    오직 유효하게 서명된 Bearer JWT 토큰만을 검증합니다.
     """
     if settings.AUTH_DISABLED:
         return DEFAULT_TEST_MEMBER_ID
@@ -135,29 +136,19 @@ async def get_current_member_id(
         raise UnauthorizedException("인증에 실패했습니다.") from e
 
 
-async def get_authenticated_member_id(
-    x_member_id: uuid.UUID | None = Header(None, alias="X-Member-Id"),
-    credentials: HTTPAuthorizationCredentials | None = Depends(security),
-) -> uuid.UUID:
-    """
-    X-Member-Id 헤더가 있으면 우선 사용하고, 없을 경우 Bearer JWT 토큰을 검증합니다.
-    """
-    if x_member_id:
-        return x_member_id
-    return await get_current_member_id(credentials)
+# 하위 호환성을 위한 별칭: get_current_member_id와 동일하게 서명된 Bearer JWT만 검증
+get_authenticated_member_id = get_current_member_id
 
 
 async def get_optional_member_id(
-    x_member_id: uuid.UUID | None = Header(None, alias="X-Member-Id"),
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
 ) -> uuid.UUID | None:
     """
     선택적 회원 식별자 추출 의존성:
-    X-Member-Id 또는 Bearer JWT가 유효하면 해당 member_id를 반환하고,
+    오직 유효하게 서명된 Bearer JWT가 있는 경우에만 해당 member_id를 반환하며,
     미인증 요청인 경우 예외를 발생시키지 않고 None을 반환합니다.
+    (X-Member-Id 헤더는 보안상 절대 허용하지 않습니다.)
     """
-    if x_member_id:
-        return x_member_id
     if not credentials or not credentials.credentials:
         return None
     try:

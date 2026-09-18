@@ -3,7 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_authenticated_member_id
+from app.core.security import get_current_member_id
 from app.db.session import get_db
 from app.schemas.reading_session import (
     BookReadingSessionListResponse,
@@ -23,7 +23,7 @@ router = APIRouter(tags=["reading-sessions"])
 )
 async def create_reading_session(
     request: CreateReadingSessionRequest,
-    member_id: uuid.UUID = Depends(get_authenticated_member_id),
+    member_id: uuid.UUID = Depends(get_current_member_id),
     db: AsyncSession = Depends(get_db),
 ):
     return await ReadingSessionService.create_session(db, member_id, request)
@@ -44,7 +44,7 @@ async def create_reading_session(
 async def create_book_reading_session(
     book_id: int,
     request: CreateReadingSessionRequest,
-    member_id: uuid.UUID = Depends(get_authenticated_member_id),
+    member_id: uuid.UUID = Depends(get_current_member_id),
     db: AsyncSession = Depends(get_db),
 ):
     return await ReadingSessionService.create_session(
@@ -66,7 +66,7 @@ async def create_book_reading_session(
 )
 async def get_book_reading_sessions(
     book_id: int,
-    member_id: uuid.UUID = Depends(get_authenticated_member_id),
+    member_id: uuid.UUID = Depends(get_current_member_id),
     db: AsyncSession = Depends(get_db),
 ):
     return await ReadingSessionService.get_book_sessions(db, member_id, book_id)
