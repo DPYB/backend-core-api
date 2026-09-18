@@ -8,7 +8,7 @@ from httpx import AsyncClient
 @pytest.mark.asyncio
 async def test_create_get_and_delete_records(client: AsyncClient):
     member_id = uuid.uuid4()
-    headers = {"X-Member-Id": str(member_id)}
+    headers = {"Authorization": f"Bearer mock-token-{member_id}"}
 
     payload = {
         "book_id": 101,
@@ -82,15 +82,13 @@ async def test_create_get_and_delete_records(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_create_record_without_member_id(client: AsyncClient):
-    """AUTH_DISABLED 테스트 환경에서는 X-Member-Id 없이도 DEFAULT_TEST_MEMBER_ID로 자동 인증되어 201 반환."""
+    """client fixture의 기본 인증 토큰(TEST_MEMBER_ID)으로 정상 생성 검증."""
     payload = {
         "book_id": 101,
         "title": "테스트",
         "content": "내용",
     }
     response = await client.post("/api/v1/records", json=payload)
-    # AUTH_DISABLED=True 테스트 환경에서는 Bearer JWT / X-Member-Id 없이도
-    # DEFAULT_TEST_MEMBER_ID로 자동 인증 처리 → 201 Created
     assert response.status_code == 201
 
 
@@ -108,26 +106,31 @@ async def test_member_isolation(client: AsyncClient):
 
     # A회원으로 레코드 생성
     create_res = await client.post(
-        "/api/v1/records", json=payload, headers={"X-Member-Id": str(member_a)}
+        "/api/v1/records",
+        json=payload,
+        headers={"Authorization": f"Bearer mock-token-{member_a}"},
     )
     assert create_res.status_code == 201
     record_id = create_res.json()["id"]
 
     # B회원이 A회원의 record_id 단건 조회 시 404
     get_res = await client.get(
-        f"/api/v1/records/{record_id}", headers={"X-Member-Id": str(member_b)}
+        f"/api/v1/records/{record_id}",
+        headers={"Authorization": f"Bearer mock-token-{member_b}"},
     )
     assert get_res.status_code == 404
 
     # B회원의 목록 조회 시 A회원 레코드 미포함
     list_res = await client.get(
-        "/api/v1/records", headers={"X-Member-Id": str(member_b)}
+        "/api/v1/records",
+        headers={"Authorization": f"Bearer mock-token-{member_b}"},
     )
     assert list_res.status_code == 200
     assert not any(r["id"] == record_id for r in list_res.json())
 
     # B회원이 A회원의 record_id 삭제 시도 시 404
     del_res = await client.delete(
-        f"/api/v1/records/{record_id}", headers={"X-Member-Id": str(member_b)}
+        f"/api/v1/records/{record_id}",
+        headers={"Authorization": f"Bearer mock-token-{member_b}"},
     )
     assert del_res.status_code == 404
