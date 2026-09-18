@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
+    GUEST_TOKEN_EXPIRE_HOURS: int = 2
+    DEMO_MEMBER_ID: str = "00000000-0000-0000-0000-000000000002"
     GOOGLE_CLIENT_ID: str | None = None
     KAKAO_CLIENT_ID: str | None = None
 

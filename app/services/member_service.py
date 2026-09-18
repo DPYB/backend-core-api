@@ -140,6 +140,42 @@ class MemberService:
         return new_member, True
 
     @staticmethod
+    async def ensure_demo_member(db: AsyncSession) -> Member:
+        """
+        체험 모드(게스트)를 위한 데모 회원 레코드 및 기본 책장/사서를 보장(Get-or-Create)합니다.
+        """
+        from app.core.security import get_demo_member_id
+
+        demo_id = get_demo_member_id()
+        stmt = select(Member).where(Member.member_id == demo_id)
+        res = await db.execute(stmt)
+        member = res.scalars().first()
+
+        if not member:
+            member = Member(
+                member_id=demo_id,
+                email="guest@dontpawget.app",
+                nickname="게스트 체험",
+                profile_image_url=None,
+                status="ACTIVE",
+                provider="DEMO",
+                provider_id="guest-demo",
+            )
+            db.add(member)
+            await db.flush()
+
+            # 기본 책장 생성
+            await ShelfService.get_or_create_default_shelf(db, demo_id)
+
+            # 기본 대표 사서 생성
+            await MemberService._ensure_default_cat_librarian(db, demo_id)
+
+            await db.commit()
+            await db.refresh(member)
+
+        return member
+
+    @staticmethod
     async def _ensure_default_cat_librarian(
         db: AsyncSession, member_id: uuid.UUID
     ) -> None:

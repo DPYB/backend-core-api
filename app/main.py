@@ -3,11 +3,13 @@ import os
 from contextlib import asynccontextmanager
 from logging.handlers import RotatingFileHandler
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.security import decode_jwt_token
 from app.db.base import Base
 from app.db.session import engine
 from app.routers import (
@@ -96,6 +98,38 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 게스트 체험 모드 무결점 Read-Only 락 미들웨어
+    @app.middleware("http")
+    async def guest_readonly_middleware(request: Request, call_next):
+        # GET, HEAD, OPTIONS는 모든 사용자 및 게스트에게 항상 허용
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return await call_next(request)
+
+        # 게스트 토큰 발급/연장 엔드포인트 자체는 POST 허용
+        if request.url.path == "/api/v1/auth/guest":
+            return await call_next(request)
+
+        # Authorization 헤더 확인
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+            try:
+                payload = decode_jwt_token(token)
+                sub_raw = str(payload.get("sub") or "")
+                if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
+                    return JSONResponse(
+                        status_code=403,
+                        content={
+                            "code": "GUEST_READONLY_MODE",
+                            "message": "체험 모드(게스트)에서는 읽기 전용으로만 이용 가능합니다. 변경 작업을 수행하려면 로그인해 주세요.",
+                        },
+                    )
+            except Exception:
+                # 잘못된 토큰 등은 라우터/엔드포인트의 보안 의존성이 401로 적절히 처리하도록 통과
+                pass
+
+        return await call_next(request)
 
     # 전역 예외 처리기 등록
     register_exception_handlers(app)

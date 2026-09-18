@@ -68,6 +68,7 @@ MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안�
 ## 5. API 계약 및 보안 컨벤션
 
 - **소셜 로그인 및 토큰 계약**: `POST /api/v1/auth/social/{google|kakao}`를 통해 자체 Bearer JWT Access Token 및 Refresh Token 발급.
+- **해커톤 체험 모드(Guest JWT)**: `POST /api/v1/auth/guest`를 통해 `sub: guest-{uuid}`, `role: guest` 규격의 게스트 토큰 발급. 신규 발급(분당 5회)과 갱신(분당 60회) IP Rate Limit 분리. `get_current_member_id`에서 `DEMO_MEMBER_ID`로 단 1회 중앙 매핑하며, `role == "guest"` 시 모든 쓰기 요청(POST/PUT/PATCH/DELETE)을 차단(403 Forbidden `GUEST_READONLY_MODE`)하는 무결점 Read-Only 락 적용.
 - **인증 헤더**: `Authorization: Bearer <jwt_access_token>` (`sub` 클레임의 member_id UUID 추출 및 서명/만료 검증. X-Member-Id 우회 전면 차단).
 - **에러 응답 규격**: 모든 에러 응답은 `{"code": "ERROR_CODE", "message": "설명"}` 일관된 JSON 바디를 반환합니다.
 - **무과금 Keep-Alive**: `/health` 엔드포인트 호출 시 Supabase에 `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지합니다. 개별 크론 대신 중앙 `DPYB/.github` 레포에서 10분 주기로 일괄 핑을 수행합니다.
