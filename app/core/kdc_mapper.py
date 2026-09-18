@@ -105,9 +105,37 @@ _SORTED_KDC_PREFIXES: tuple[str, ...] = tuple(
 )
 
 
+def extract_kdc_code(kdc_str: str | None) -> str | None:
+    """
+    국립중앙도서관 및 서지 데이터의 복합 KDC 문자열에서 실제 분류기호(숫자)를 정밀 추출.
+    - 권차/판차/별치기호/복수분류 등이 혼합된 경우(예: '[5] 813.6', '5판 813.6', 'K813.6', '813.6/005')에도
+      엉뚱한 숫자(판차 5 등)가 아닌 3자리 표준 KDC(813.6)를 우선 추출.
+    - 1) 3자리 숫자 + 소수점 패턴 우선 추출 (예: '813.6', '005.133', '843')
+    - 2) 1~2자리 약식 분류기호 추출 (단, '5판', '제2권', 'v.5' 등 수식어 결합 숫자는 배제)
+    """
+    if not kdc_str or not kdc_str.strip():
+        return None
+
+    clean = kdc_str.strip()
+
+    # 1. 3자리 정수 + 선택적 소수점 (예: 813.6, 005.133, 843, K813.6, [5] 813.6, 813.6/005)
+    match3 = re.search(r"(?:^|[^\d])(\d{3}(?:\.\d+)?)(?:[^\d]|$)", clean)
+    if match3:
+        return match3.group(1)
+
+    # 2. 접두사/약식 1~2자리 (예: '81', '00', '8', '0')
+    # 판차('5판'), 권차('제2권', 'v.5') 등 한글/영문 수식어가 직전/직후에 붙은 경우 배제
+    match_short = re.search(r"(?:^|[\s/\[\(])(\d{1,2}(?:\.\d+)?)(?:[\s/\]\)]|$)", clean)
+    if match_short:
+        return match_short.group(1)
+
+    return None
+
+
 def kdc_to_genre(kdc_str: str | None) -> GenreType:
     """
     KDC 분류기호 문자열을 판별하여 10대 대분류 ENUM으로 변환.
+    - extract_kdc_code를 통해 부가정보(권차, 판차 등)를 정제한 순수 분류기호를 기준으로 판정.
     - 000번대(총류)는 도서관 고유 용어로, 현대 독서 분류에 맞춰 실제 알맹이에 따라 4대 카테고리로 라우팅:
       1) 004, 005 (컴퓨터과학, 프로그래밍, SW) -> TECHNOLOGY (기술과학/컴퓨터IT)
       2) 020 (도서관학, 서지학, 독서법, 글쓰기) -> PHILOSOPHY (철학/자기계발)
@@ -115,22 +143,17 @@ def kdc_to_genre(kdc_str: str | None) -> GenreType:
       4) 050 (잡지, 정기간행물, 매거진) -> GENERAL (교양)
     - 그 외 100~900번대는 KDC_FIRST_CHAR_MAPPING 상수를 통해 O(1) 매핑.
     """
-    if not kdc_str or not kdc_str.strip():
+    code = extract_kdc_code(kdc_str)
+    if not code:
         return GenreType.NONE
 
-    clean = kdc_str.strip()
-    match = re.search(r"\d+", clean)
-    if not match:
-        return GenreType.NONE
-
-    digits = match.group()
-    first_char = digits[0]
+    first_char = code[0]
 
     # 000번대 총류 세부 라우팅 (컴퓨터/IT, 자기계발/독서법, 교양)
     if first_char == "0":
-        if clean.startswith(("004", "005")):
+        if code.startswith(("004", "005")):
             return GenreType.TECHNOLOGY
-        if clean.startswith("02"):
+        if code.startswith("02"):
             return GenreType.PHILOSOPHY
         return GenreType.GENERAL
 
@@ -140,15 +163,14 @@ def kdc_to_genre(kdc_str: str | None) -> GenreType:
 def kdc_to_subject(kdc_str: str | None) -> str | None:
     """
     KDC 세부분류기호로부터 구체적인 세부 주제(SF, 에세이, 소설, IT 등)를 도출.
-    긴 접두사(세부분류)부터 우선 검사하여 순서 의존성(Order Dependency) 버그를 원천 방지.
+    extract_kdc_code로 정제된 코드를 기반으로 긴 접두사부터 우선 검사하여 일관된 매핑 보장.
     """
-    if not kdc_str or not kdc_str.strip():
+    code = extract_kdc_code(kdc_str)
+    if not code:
         return None
 
-    clean = kdc_str.strip()
-
     for prefix in _SORTED_KDC_PREFIXES:
-        if clean.startswith(prefix):
+        if code.startswith(prefix):
             return KDC_SUBJECT_MAPPING[prefix]
 
     return None
@@ -209,6 +231,8 @@ GENRE_KEYWORD_MAPPING: dict[str, tuple[GenreType, str | None]] = {
     "심리": (GenreType.PHILOSOPHY, "심리학"),
     "심리학": (GenreType.PHILOSOPHY, "심리학"),
     "자기계발": (GenreType.PHILOSOPHY, "자기계발"),
+    "자기개발": (GenreType.PHILOSOPHY, "자기계발"),
+    "개발": (GenreType.PHILOSOPHY, "자기계발"),
     "self_help": (GenreType.PHILOSOPHY, "자기계발"),
     "humanities": (GenreType.PHILOSOPHY, "인문학"),
     "philosophy": (GenreType.PHILOSOPHY, "철학"),
@@ -243,7 +267,9 @@ GENRE_KEYWORD_MAPPING: dict[str, tuple[GenreType, str | None]] = {
     "it/프로그래밍": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "프로그래밍": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "코딩": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
-    "개발": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "소프트웨어 개발": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "웹개발": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
+    "앱개발": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "ai": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "인공지능": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
     "데이터": (GenreType.TECHNOLOGY, "컴퓨터/IT"),
@@ -326,7 +352,7 @@ SF_KEYWORDS: tuple[str, ...] = (
     "안드로이드",
     "사이보그",
     "타임머신",
-    "스페이스",
+    "스페이스 오페라",
     "사이언스 픽션",
     "science fiction",
 )

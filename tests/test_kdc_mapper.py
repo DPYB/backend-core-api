@@ -28,6 +28,15 @@ def test_kdc_to_genre_mapping():
     assert kdc_to_genre("") == GenreType.NONE
     assert kdc_to_genre("ABC") == GenreType.NONE
 
+    # 권차, 판차, 별치기호 등 부가정보가 혼합된 KDC 문자열 앵커링 정규화 검증
+    # (과거 5판, [5] 등의 '5'를 첫자리로 오인하여 문학이 기술과학으로 오분류되던 치명적 버그 방지)
+    assert kdc_to_genre("5판 813.6") == GenreType.LITERATURE
+    assert kdc_to_genre("[5] 813.6") == GenreType.LITERATURE
+    assert kdc_to_genre("813.6/005") == GenreType.LITERATURE
+    assert kdc_to_genre("K813.6") == GenreType.LITERATURE
+    assert kdc_to_genre("v.2 813.72") == GenreType.LITERATURE
+    assert kdc_to_genre("5권 005.133") == GenreType.TECHNOLOGY
+
 
 def test_genre_korean_names():
     assert GENRE_KOREAN_NAMES[GenreType.GENERAL] == "교양"
@@ -134,6 +143,19 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.PHILOSOPHY
     assert sub == "독서법/글쓰기"
 
+    # '개발', '자기개발'이 기술과학/IT가 아닌 철학/자기계발로 매핑되는지 검증
+    genre, sub = parse_to_genre_and_subject("자기개발")
+    assert genre == GenreType.PHILOSOPHY
+    assert sub == "자기계발"
+
+    genre, sub = parse_to_genre_and_subject("개발")
+    assert genre == GenreType.PHILOSOPHY
+    assert sub == "자기계발"
+
+    genre, sub = parse_to_genre_and_subject("소프트웨어 개발")
+    assert genre == GenreType.TECHNOLOGY
+    assert sub == "컴퓨터/IT"
+
     # 2. 영문 / 레거시 키워드 입력
     genre, sub = parse_to_genre_and_subject("literature")
     assert genre == GenreType.LITERATURE
@@ -146,10 +168,14 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.PHILOSOPHY
     assert sub == "자기계발"
 
-    # 3. KDC 분류기호 입력
+    # 3. KDC 분류기호 입력 (판차/권차 혼합 입력 포함)
     genre, sub = parse_to_genre_and_subject("813.7")
     assert genre == GenreType.LITERATURE
     assert sub == "SF/과학소설"
+
+    genre, sub = parse_to_genre_and_subject("5판 813.6")
+    assert genre == GenreType.LITERATURE
+    assert sub == "한국소설"
 
     # 4. 기존 subject 보존
     genre, sub = parse_to_genre_and_subject("LITERATURE", current_subject="우주 SF")
