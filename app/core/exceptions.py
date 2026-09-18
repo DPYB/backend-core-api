@@ -111,6 +111,25 @@ class LibrarianAccessDeniedException(AppException):
         super().__init__(status.HTTP_403_FORBIDDEN, "LIBRARIAN_ACCESS_DENIED", message)
 
 
+class GuestReadOnlyModeException(AppException):
+    def __init__(
+        self,
+        message: str = "체험 모드(게스트)에서는 읽기 전용으로만 이용 가능합니다. 변경 작업을 수행하려면 로그인해 주세요.",
+    ):
+        super().__init__(status.HTTP_403_FORBIDDEN, "GUEST_READONLY_MODE", message)
+
+
+# --- 429 Too Many Requests ---
+class RateLimitExceededException(AppException):
+    def __init__(
+        self,
+        message: str = "요청 횟수 제한을 초과했습니다. 잠시 후 다시 시도해 주세요.",
+    ):
+        super().__init__(
+            status.HTTP_429_TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", message
+        )
+
+
 # --- 404 Not Found ---
 class LibraryBookNotFoundException(AppException):
     def __init__(self, message: str = "도서를 찾을 수 없습니다."):
@@ -224,6 +243,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             403: "LIBRARY_BOOK_ACCESS_DENIED",
             404: "LIBRARY_BOOK_NOT_FOUND",
             409: "BOOK_ALREADY_REGISTERED",
+            429: "RATE_LIMIT_EXCEEDED",
             502: "EXTERNAL_API_ERROR",
         }
         code = code_map.get(exc.status_code, "INTERNAL_ERROR")

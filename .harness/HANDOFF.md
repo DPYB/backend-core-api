@@ -336,6 +336,31 @@
   - 본 보안 핫픽스 PR 생성 및 리뷰 요청.
   - 팀원 토의 결과 확정 시 피드백에 맞춰 정식/체험 인증 플로우 작업 진행.
 
+## 2026-09-18: 해커톤 심사 대비 게스트 체험 모드(Guest JWT) 도입 및 무결점 Read-Only 락 구축
+- **게스트 토큰 발급 및 세션 유지 엔드포인트 (`POST /api/v1/auth/guest`)**:
+  - `sub: "guest-{uuid}"`, `role: "guest"` 규격의 2시간 만료 JWT 토큰 발급 구현 (`app/core/security.py`의 `create_guest_token`).
+  - 요청 바디에 `guest_id`가 포함된 경우 새 UUID를 만들지 않고 동일 ID를 `sub`에 유지하여 만료시간만 연장 발급.
+  - `app/schemas/auth.py`: `GuestLoginRequest`, `GuestLoginResponse` DTO 구현 및 `access_token`, `refresh_token` camelCase/snake_case 듀얼 직렬화 지원.
+- **신규 발급 vs 갱신 IP Rate Limit 분리 (`app/core/rate_limit.py`)**:
+  - 단순 IP 제한으로 묶여 정상적인 토큰 갱신 사용자가 차단되는 문제를 원천 차단하기 위해 슬라이딩 윈도우 인메모리 Rate Limiter 구축.
+  - 바디가 없는 '신규 발급'은 빡빡한 IP 제한(분당 5회 / `guest_issue:{ip}`)을 적용하고, `guest_id`가 있는 '갱신/연장'은 별도 버킷(분당 60회 / `guest_refresh:{ip}`)으로 널널하게 분리.
+  - 초과 시 `429 Too Many Requests` (`code: RATE_LIMIT_EXCEEDED`) 반환.
+- **Mock 데이터 중앙 매핑 및 Null-safe 처리**:
+  - `app/config.py`에 `DEMO_MEMBER_ID`(`00000000-0000-0000-0000-000000000002`) 정의.
+  - `app/core/security.py`: `get_current_member_id` 및 `get_optional_member_id` 의존성 주입부에서 토큰 검증 직후 `if role == 'guest' or sub.startswith('guest-'): return DEMO_MEMBER_ID`로 딱 한 번만 중앙 매핑.
+  - 게스트 토큰의 `email`, `nickname`, `name` 클레임 부재 시에도 프로필 조회 및 로깅 등에서 AttributeError/NoneType 크래시가 나지 않도록 Null-check 보장.
+  - `MemberService.ensure_demo_member(db)`: 데모 회원 레코드 및 기본 책장/고양이 사서(CAT "블루")를 사전 자동 보장(Get-or-Create).
+- **무결점 Read-Only 락 (403 Forbidden)**:
+  - 데모 데이터 오염 방지를 위해, `app/main.py`에 HTTP 미들웨어를 구축하여 게스트 토큰(`role == 'guest'`)일 때 `POST /api/v1/auth/guest`를 제외한 모든 상태 변경 요청(`POST`, `PUT`, `PATCH`, `DELETE`)을 즉시 `403 Forbidden` (`code: GUEST_READONLY_MODE`)으로 차단.
+  - `GET` 요청은 정상 통과하여 DEMO 계정의 3D 서재, 책장, 도서, 사서, 독서 세션, 리포트 조회를 자유롭게 체험 가능.
+- **테스트 및 검증**:
+  - `tests/test_guest_auth.py`: 게스트 토큰 신규 발급 및 클레임 규격 검증, 세션 연장(Refresh), Rate Limit 신규(5회 차단) vs 갱신(별도 버킷 통과) 분리 검증, DEMO_MEMBER_ID 읽기 매핑 검증, POST/PUT/PATCH/DELETE 전수 쓰기 차단(403 Forbidden) 검증 5건 추가.
+  - 전체 단위/통합 테스트 92개 100% Pass (2.43s), `ruff check`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+- **다음 세션에서 할 일**:
+  - `feat/guest-jwt-demo-mode` 브랜치 커밋 및 PR 생성.
+  - Render 배포 후 프론트엔드/AI 에이전트 서비스와 체험 모드 E2E 연동 점검.
+
+
 
 
 

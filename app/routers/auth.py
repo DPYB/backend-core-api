@@ -1,10 +1,14 @@
-from fastapi import APIRouter, Cookie, Depends, Response, status
+import uuid
+
+from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import UnauthorizedException
+from app.core.rate_limit import get_client_ip, guest_rate_limiter
 from app.core.security import (
     create_access_token,
+    create_guest_token,
     create_refresh_token,
     decode_refresh_token,
 )
@@ -12,6 +16,8 @@ from app.db.session import get_db
 from app.schemas.auth import (
     AvailabilityRequest,
     AvailabilityResponse,
+    GuestLoginRequest,
+    GuestLoginResponse,
     LoginRequest,
     LoginResponse,
     RefreshTokenRequest,
@@ -33,6 +39,64 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
         httponly=True,
         samesite="lax",
         path="/",
+    )
+
+
+@router.post(
+    "/guest",
+    response_model=GuestLoginResponse,
+    status_code=status.HTTP_200_OK,
+    summary="게스트 체험 토큰 발급 및 세션 연장",
+)
+async def issue_guest_token(
+    request: Request,
+    response: Response,
+    req: GuestLoginRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> GuestLoginResponse:
+    """
+    해커톤 심사 및 체험 모드용 게스트 JWT 발급/연장:
+    - sub: guest-{uuid}, role: guest
+    - 세션 유지: guest_id가 들어오면 기존 UUID를 유지하며 만료시간만 연장
+    - Rate Limit 분리: 신규 발급은 분당 5회(빡빡함), 갱신(guest_id 보유)은 분당 60회(널널함)
+    - 데모 회원 레코드 사전 보장
+    """
+    client_ip = get_client_ip(request)
+    guest_id_raw = (
+        req.guest_id.strip() if req and req.guest_id and req.guest_id.strip() else None
+    )
+
+    if guest_id_raw:
+        # [갱신/세션 연장] 널널한 IP 제한 (분당 60회)
+        guest_rate_limiter.check(
+            f"guest_refresh:{client_ip}", max_requests=60, window_seconds=60
+        )
+        # 만약 'guest-' 접두사가 이미 붙어 있다면 UUID 부분만 추출하여 정규화
+        clean_guest_id = guest_id_raw.replace("guest-", "")
+    else:
+        # [신규 발급] 빡빡한 IP 제한 (분당 5회)
+        guest_rate_limiter.check(
+            f"guest_issue:{client_ip}", max_requests=5, window_seconds=60
+        )
+        clean_guest_id = str(uuid.uuid4())
+
+    # 데모 회원(기본책장, 대표사서 등) 존재 보장
+    await MemberService.ensure_demo_member(db)
+
+    # 게스트 JWT 생성 (1~2시간 만료)
+    access_token = create_guest_token(clean_guest_id)
+    expires_in = settings.GUEST_TOKEN_EXPIRE_HOURS * 3600
+    sub_val = f"guest-{clean_guest_id}"
+
+    return GuestLoginResponse(
+        access_token=access_token,
+        refresh_token=None,
+        token_type="Bearer",
+        expires_in=expires_in,
+        guest_id=clean_guest_id,
+        sub=sub_val,
+        role="guest",
+        is_guest=True,
     )
 
 

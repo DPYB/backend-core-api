@@ -13,6 +13,14 @@ security = HTTPBearer(auto_error=False)
 DEFAULT_TEST_MEMBER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
+def get_demo_member_id() -> uuid.UUID:
+    """체험 모드(게스트) 사용자를 위한 데모 계정 member_id UUID 반환"""
+    try:
+        return uuid.UUID(settings.DEMO_MEMBER_ID)
+    except Exception:
+        return uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+
 def get_jwt_secret_key() -> str:
     if settings.JWT_SECRET_KEY and settings.JWT_SECRET_KEY.strip():
         return settings.JWT_SECRET_KEY.strip()
@@ -27,6 +35,31 @@ def create_access_token(member_id: uuid.UUID, email: str, nickname: str) -> str:
         "sub": str(member_id),
         "email": email,
         "nickname": nickname,
+        "token_use": "access",
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+    }
+    return jwt.encode(payload, get_jwt_secret_key(), algorithm=settings.JWT_ALGORITHM)
+
+
+def create_guest_token(guest_id: str, expire_hours: int | None = None) -> str:
+    """
+    해커톤 체험 모드를 위한 게스트 JWT 발급:
+    - sub: guest-{uuid}
+    - role: guest
+    - 짧은 만료시간 (기본 1~2시간)
+    """
+    now = datetime.now(UTC)
+    hours = (
+        expire_hours if expire_hours is not None else settings.GUEST_TOKEN_EXPIRE_HOURS
+    )
+    expire = now + timedelta(hours=hours)
+
+    sub_value = f"guest-{guest_id}" if not guest_id.startswith("guest-") else guest_id
+
+    payload = {
+        "sub": sub_value,
+        "role": "guest",
         "token_use": "access",
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
@@ -74,7 +107,18 @@ def decode_jwt_token(token: str) -> dict:
     """
     표준 JWT Bearer 토큰 디코딩 및 기본 클레임 검증.
     """
-    # 1. 테스트용 Mock 토큰 처리: "mock-token-<uuid>" 또는 "test-token"
+    # 1. 테스트용 Mock 토큰 처리: "mock-token-<uuid>" 또는 "test-token" 또는 "mock-guest-token"
+    if token.startswith("mock-guest-token"):
+        guest_id = (
+            token.replace("mock-guest-token-", "")
+            if token.startswith("mock-guest-token-")
+            else "demo-guest-uuid"
+        )
+        return {
+            "sub": f"guest-{guest_id}",
+            "role": "guest",
+            "token_use": "access",
+        }
     if token.startswith("mock-token-"):
         mock_id = token.replace("mock-token-", "")
         return {
@@ -110,6 +154,7 @@ async def get_current_member_id(
     """
     현재 인증된 회원의 member_id (UUID)를 반환하는 FastAPI 의존성.
     오직 유효하게 서명된 Bearer JWT 토큰만을 검증합니다.
+    - 게스트 토큰(role == 'guest' 또는 sub가 'guest-'로 시작)인 경우 DEMO_MEMBER_ID로 단 1회 중앙 매핑합니다.
     """
     if settings.AUTH_DISABLED:
         return DEFAULT_TEST_MEMBER_ID
@@ -121,12 +166,16 @@ async def get_current_member_id(
     try:
         payload = decode_jwt_token(token)
 
-        # sub 클레임 추출 및 UUID 변환 (사용자 고유 UUID 식별자)
-        sub = payload.get("sub") or payload.get("member_id")
-        if not sub:
+        # 게스트 토큰 확인 (role == 'guest' 또는 sub가 'guest-'로 시작)
+        sub_raw = str(payload.get("sub") or payload.get("member_id") or "")
+        if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
+            return get_demo_member_id()
+
+        # 일반 회원 sub 클레임 추출 및 UUID 변환
+        if not sub_raw:
             raise UnauthorizedException("토큰에 사용자 식별자가 존재하지 않습니다.")
 
-        return uuid.UUID(str(sub))
+        return uuid.UUID(sub_raw)
 
     except (ValueError, TypeError) as e:
         raise UnauthorizedException("유효하지 않은 사용자 식별자입니다.") from e
@@ -147,13 +196,27 @@ async def get_optional_member_id(
     선택적 회원 식별자 추출 의존성:
     오직 유효하게 서명된 Bearer JWT가 있는 경우에만 해당 member_id를 반환하며,
     미인증 요청인 경우 예외를 발생시키지 않고 None을 반환합니다.
-    (X-Member-Id 헤더는 보안상 절대 허용하지 않습니다.)
+    - 게스트 토큰인 경우 DEMO_MEMBER_ID를 반환합니다.
     """
     if not credentials or not credentials.credentials:
         return None
     try:
         payload = decode_jwt_token(credentials.credentials)
-        sub = payload.get("sub") or payload.get("member_id")
-        return uuid.UUID(str(sub)) if sub else None
+        sub_raw = str(payload.get("sub") or payload.get("member_id") or "")
+        if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
+            return get_demo_member_id()
+        return uuid.UUID(sub_raw) if sub_raw else None
+    except Exception:
+        return None
+
+
+async def get_current_user_claims(
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
+) -> dict | None:
+    """토큰의 페이로드를 디코딩하여 반환합니다 (미들웨어 또는 의존성 검증용)."""
+    if not credentials or not credentials.credentials:
+        return None
+    try:
+        return decode_jwt_token(credentials.credentials)
     except Exception:
         return None
