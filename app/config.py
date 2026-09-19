@@ -51,13 +51,21 @@ class Settings(BaseSettings):
 
     def is_remote_database(self) -> bool:
         """원격 Supabase 또는 클라우드 DB 호스트인지 감지"""
-        remote_keywords = ["supabase.com", "pooler.supabase", "aws", "rds.amazonaws.com"]
+        remote_keywords = [
+            "supabase.com",
+            "pooler.supabase",
+            "aws",
+            "rds.amazonaws.com",
+        ]
         target_url = self.DATABASE_URL.lower()
         return any(keyword in target_url for keyword in remote_keywords)
 
     def validate_production_settings(self) -> None:
         """운영 환경에서 취약한 기본 시크릿 방치 방지"""
-        if self.ENV == "production" and self.JWT_SECRET_KEY == "dont-paw-get-jwt-secret-change-in-prod-2026":
+        if (
+            self.ENV == "production"
+            and self.JWT_SECRET_KEY == "dont-paw-get-jwt-secret-change-in-prod-2026"
+        ):
             raise ValueError(
                 "CRITICAL SECURITY: JWT_SECRET_KEY must be configured in production environment! "
                 "Do not use the default secret key."

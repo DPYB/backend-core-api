@@ -76,7 +76,9 @@ async def lifespan(app: FastAPI):
         settings.ENV == "test" and "sqlite" in settings.DATABASE_URL
     )
     if should_auto_create:
-        logger.info("Running Base.metadata.create_all for local/test schema initialization...")
+        logger.info(
+            "Running Base.metadata.create_all for local/test schema initialization..."
+        )
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     yield
