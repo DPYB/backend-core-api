@@ -365,3 +365,20 @@
   - 전체 단위/통합 테스트 101개 100% Pass, ruff 및 mypy 무결점 통과.
 - **다음 세션에서 할 일**:
   - `feat/docker-alembic-auto-upgrade` PR 생성 및 develop 브랜치 머지 완료 확인.
+
+## 2026-09-20: 공용 Supabase DB 보호 안전 인터락 및 JWT/환경설정 안정화
+- **로컬 기동 시 암묵적 `create_all` 차단**:
+  - `app/main.py` lifespan에서 `ENV in ("local", "test")` 조건으로 무조건 실행되던 `Base.metadata.create_all`을 제거하고, 인메모리 테스트(SQLite)이거나 명시적 플래그(`AUTO_CREATE_TABLES=true`)일 때만 실행되도록 가드 추가.
+  - 공용 Supabase DB를 가리키는 로컬 개발 환경에서 불필요한 DDL 실행 시도 및 컬럼 미생성으로 인한 스키마 불일치 원천 차단.
+- **원격 DB 마이그레이션 안전 인터락 구축**:
+  - `alembic/env.py` 및 `app/config.py`에 원격 Supabase/클라우드 DB 호스트 감지(`is_remote_database`) 로직 추가.
+  - `ENV=local`에서 원격 DB를 대상으로 `alembic upgrade head`를 단독 실행할 경우 `ALLOW_REMOTE_MIGRATION=true`가 없으면 에러를 발생시키며 즉시 중단되도록 안전 인터락 적용.
+- **운영 환경 취약한 기본 JWT 시크릿 방치 방지 (fail-fast)**:
+  - `app/config.py`에서 `ENV == "production"`이고 `JWT_SECRET_KEY`가 코드 기본값일 경우 기동 단계에서 ValueError를 발생시켜 보안 사고 방지.
+  - `.env.example`에 core-api와 ai-agent 간 동일한 `JWT_SECRET_KEY` 사용 필수 주의사항 주석 추가.
+- **.env 설정 정비 및 CORS 명시**:
+  - `.env` 내 중복 기재되어 있던 `AUTH_DISABLED=false` 한 줄 제거.
+  - `CORS_ORIGINS=http://localhost:3000,http://localhost:5173`을 `.env`에 명시하여 보안 강화.
+- **품질 검증**:
+  - 신규 안전성 단위 테스트 3건 추가(`tests/test_safety_config.py`).
+  - 전체 단위/통합 테스트 104개 100% Pass, `ruff check .` 무결점 통과.
