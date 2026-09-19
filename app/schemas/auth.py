@@ -148,3 +148,20 @@ class ResendSignupRequest(CamelModel):
     """회원가입 인증코드 재전송 요청"""
 
     email: str = Field(..., min_length=1, description="재전송 대상 이메일")
+
+
+class ChangePasswordRequest(CamelModel):
+    """로그인 회원 비밀번호 변경 요청"""
+
+    current_password: str = Field(..., min_length=1, description="현재 비밀번호")
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        description="새 비밀번호 (8자 이상, 영문 대/소문자, 숫자, 특수문자 포함)",
+    )
+
+
+class ChangePasswordResponse(CamelModel):
+    """비밀번호 변경 응답"""
+
+    message: str = "비밀번호가 성공적으로 변경되었습니다."
