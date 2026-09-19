@@ -341,9 +341,17 @@
 - **실환경 검증 및 품질**:
   - Supabase PostgreSQL DB에 `alembic upgrade head` 성공 반영 (007 -> 008).
   - Render 배포 API `GET /api/v1/terms` 호출 시 신규 3종 전문 정상 반환 확인.
-  - 전체 97개 테스트 100% Pass, `ruff check`, `mypy app` 0 에러 통과.
-- **다음 세션에서 할 일**:
-  - 본 마이그레이션 커밋 푸시 및 PR 생성/머지.
-  - 프론트엔드(`frontend-reader-web`)에서 성별 '선택 안 함' 및 마이페이지 프로필 수정 UI 연동.
+  - PR #19 머지 완료.
+
+## 2026-09-19: 로그인 회원 비밀번호 변경 API 구현 (`POST /api/v1/auth/password/change`)
+- **엔드포인트 및 DTO 구현**:
+  - `app/schemas/auth.py`: `ChangePasswordRequest` (`current_password`, `new_password`), `ChangePasswordResponse` 추가.
+  - `app/services/member_service.py`: `change_password` 비즈니스 로직 작성 (현재 비밀번호 PBKDF2 해시 검증, 불일치 시 401 `INVALID_PASSWORD`, 동일 비밀번호 400 `SAME_AS_CURRENT_PASSWORD`, 8자/대소문자/숫자/특수문자 정규식 검증 `PASSWORD_TOO_WEAK`, 소셜 로그인 계정 400 가드).
+  - `app/routers/auth.py`: `POST /api/v1/auth/password/change` 라우터 연동 (`get_authenticated_member_id` 인증 의존성 적용).
+- **테스트 및 검증**:
+  - `tests/test_password_change.py`: 4건 단위/통합 테스트 추가 및 검증 (성공, 현재 비밀번호 불일치, 동일 비밀번호, 복잡도 미충족).
+  - 전체 단위/통합 테스트 101개 100% Pass (2.86s), `ruff check .` 0 에러 통과.
+- **형상 관리 및 로컬 가이드 제외**:
+  - `docs/` 로컬 DB 운영 가이드 디렉터리를 `backend-core-api` 및 `backend-ai-agent` 양쪽의 `.gitignore`에 등록하여 레포 커밋 대상에서 안전하게 제외 완료.
 
 
