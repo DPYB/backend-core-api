@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,9 @@ from app.models.terms import MemberAgreement
 from app.schemas.member import MemberProfileResponse, UpdateProfileRequest
 from app.services.shelf_service import ShelfService
 from app.services.social_auth_service import SocialUserInfo
+
+if TYPE_CHECKING:
+    from app.schemas.auth import SignupRequest
 
 
 class MemberService:
@@ -138,6 +142,114 @@ class MemberService:
         await db.commit()
         await db.refresh(new_member)
         return new_member, True
+
+    @staticmethod
+    async def register_member(
+        db: AsyncSession,
+        req: "SignupRequest",
+    ) -> Member:
+        """
+        정식 회원가입 처리:
+        1. 필수 약관 동의 검증
+        2. 이메일 중복 확인 (409 Conflict)
+        3. 신규 회원 생성 및 비밀번호 단방향 해싱 저장
+        4. 기본 책장(Default Shelf) 및 기본 대표 고양이 사서(CAT "블루", Lv.1) 자동 지급
+        5. 약관 동의 이력 영속화
+        """
+        from datetime import date
+
+        from app.core.exceptions import (
+            EmailAlreadyExistsException,
+            TermsNotAgreedException,
+        )
+        from app.core.security import hash_password
+        from app.models.terms import Terms
+
+        # 1. 필수 약관 동의 검증
+        if not req.agree_terms or not req.agree_privacy:
+            raise TermsNotAgreedException(
+                "필수 이용약관 및 개인정보 처리방침에 모두 동의해야 합니다."
+            )
+
+        clean_email = req.email.strip().lower()
+
+        # 2. 이메일 중복 확인
+        stmt = select(Member).where(
+            Member.email == clean_email,
+            Member.deleted_at.is_(None),
+        )
+        res = await db.execute(stmt)
+        existing_member = res.scalars().first()
+        if existing_member:
+            raise EmailAlreadyExistsException("이미 사용 중인 이메일입니다.")
+
+        # 3. 신규 회원 생성
+        nickname = (
+            req.nickname.strip()
+            if req.nickname and req.nickname.strip()
+            else clean_email.split("@")[0]
+        )[:50]
+        parsed_birth_date: date | None = None
+        if req.birth_date and req.birth_date.strip():
+            try:
+                parsed_birth_date = date.fromisoformat(req.birth_date.strip())
+            except ValueError:
+                parsed_birth_date = None
+
+        new_member_id = uuid.uuid4()
+        pw_hashed = hash_password(req.password)
+
+        new_member = Member(
+            member_id=new_member_id,
+            email=clean_email,
+            nickname=nickname,
+            password_hash=pw_hashed,
+            birth_date=parsed_birth_date,
+            gender=req.gender.strip() if req.gender else None,
+            profile_image_url=None,
+            status="ACTIVE",
+            provider="LOCAL",
+            provider_id=clean_email,
+        )
+        db.add(new_member)
+        await db.flush()
+
+        # 4. 기본 책장 자동 생성 보장
+        await ShelfService.get_or_create_default_shelf(db, new_member_id)
+
+        # 5. 기본 대표 사서(CAT "블루", Lv.1) 자동 지급 보장
+        await MemberService._ensure_default_cat_librarian(db, new_member_id)
+
+        # 6. 약관 동의 이력 저장
+        # 활성 약관 목록 조회
+        terms_stmt = select(Terms).where(
+            Terms.expired_at.is_(None),
+            Terms.deleted_at.is_(None),
+        )
+        terms_res = await db.execute(terms_stmt)
+        active_terms = terms_res.scalars().all()
+
+        agreed_codes = set()
+        if req.agree_terms:
+            agreed_codes.add("TERMS_OF_SERVICE")
+        if req.agree_privacy:
+            agreed_codes.add("PRIVACY")
+        if req.agree_ai_analysis:
+            agreed_codes.add("AI_ANALYSIS")
+
+        for term in active_terms:
+            if term.code in agreed_codes:
+                db.add(
+                    MemberAgreement(
+                        member_id=new_member_id,
+                        terms_id=term.id,
+                        action="AGREE",
+                    )
+                )
+
+        await db.commit()
+        await db.refresh(new_member)
+        return new_member
 
     @staticmethod
     async def ensure_demo_member(db: AsyncSession) -> Member:

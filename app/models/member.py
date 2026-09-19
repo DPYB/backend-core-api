@@ -46,8 +46,9 @@ class Member(Base):
     )  # ACTIVE, WITHDRAWN
     provider: Mapped[str | None] = mapped_column(
         String(50), nullable=True
-    )  # GOOGLE, KAKAO
+    )  # GOOGLE, KAKAO, LOCAL
     provider_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
