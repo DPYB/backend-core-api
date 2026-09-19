@@ -51,3 +51,5 @@ htmlcov/
 logs/
 *.log
 
+# Local Ops Docs
+docs/
