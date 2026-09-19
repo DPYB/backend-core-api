@@ -116,16 +116,24 @@ class MemberService:
         member = res.scalars().first()
 
         if member:
+            # dpyb26@gmail.com 데모 계정에 프로필 이미지가 없으면 chris.png 설정
+            if clean_email == "dpyb26@gmail.com" and not member.profile_image_url:
+                member.profile_image_url = "/profile/chris.png"
+                await db.commit()
+                await db.refresh(member)
             return member, False
 
         # 신규 회원 생성
         nickname = clean_email.split("@")[0][:50] or "reader"
         new_member_id = uuid.uuid4()
+        default_profile = (
+            "/profile/chris.png" if clean_email == "dpyb26@gmail.com" else None
+        )
         new_member = Member(
             member_id=new_member_id,
             email=clean_email,
             nickname=nickname,
-            profile_image_url=None,
+            profile_image_url=default_profile,
             status="ACTIVE",
             provider="LOCAL",
             provider_id=clean_email,
@@ -268,7 +276,7 @@ class MemberService:
                 member_id=demo_id,
                 email="guest@dontpawget.app",
                 nickname="게스트 체험",
-                profile_image_url=None,
+                profile_image_url="/profile/clia.png",
                 status="ACTIVE",
                 provider="DEMO",
                 provider_id="guest-demo",
@@ -282,6 +290,10 @@ class MemberService:
             # 기본 대표 사서 생성
             await MemberService._ensure_default_cat_librarian(db, demo_id)
 
+            await db.commit()
+            await db.refresh(member)
+        elif not member.profile_image_url:
+            member.profile_image_url = "/profile/clia.png"
             await db.commit()
             await db.refresh(member)
 
