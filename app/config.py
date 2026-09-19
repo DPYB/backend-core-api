@@ -24,6 +24,8 @@ class Settings(BaseSettings):
         elif not self.DATABASE_URL:
             self.DATABASE_URL = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres?options=-c%20search_path=core"
 
+        self.validate_production_settings()
+
     # Authentication (Auth Server & OAuth JWT)
     AUTH_DISABLED: bool = False
     JWT_SECRET_KEY: str = "dont-paw-get-jwt-secret-change-in-prod-2026"
@@ -44,6 +46,30 @@ class Settings(BaseSettings):
     PORT: int = 8000
     PROJECT_NAME: str = "backend-core-api"
     CORS_ORIGINS: str = "*"
+    AUTO_CREATE_TABLES: bool = False
+    ALLOW_REMOTE_MIGRATION: bool = False
+
+    def is_remote_database(self) -> bool:
+        """원격 Supabase 또는 클라우드 DB 호스트인지 감지"""
+        remote_keywords = [
+            "supabase.com",
+            "pooler.supabase",
+            "aws",
+            "rds.amazonaws.com",
+        ]
+        target_url = self.DATABASE_URL.lower()
+        return any(keyword in target_url for keyword in remote_keywords)
+
+    def validate_production_settings(self) -> None:
+        """운영 환경에서 취약한 기본 시크릿 방치 방지"""
+        if (
+            self.ENV == "production"
+            and self.JWT_SECRET_KEY == "dont-paw-get-jwt-secret-change-in-prod-2026"
+        ):
+            raise ValueError(
+                "CRITICAL SECURITY: JWT_SECRET_KEY must be configured in production environment! "
+                "Do not use the default secret key."
+            )
 
 
 settings = Settings()

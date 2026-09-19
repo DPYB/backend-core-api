@@ -36,6 +36,7 @@
 - **Phase 32 (정식 약관 3종 전문 데이터 마이그레이션 & 실환경 동기화)**: Alembic `008_update_baseline_terms_content` 마이그레이션을 통해 기존 개발용 요약 약관을 안전하게 만료(expired_at) 처리하고, 프로젝트 정식 약관 3종(서비스 이용약관 11개 조항, 개인정보 수집 및 이용 동의, AI 분석 기능 이용 동의) 전문을 신규 행으로 영속화 완료. 실환경 Supabase 및 Render `GET /api/v1/terms` 실시간 반환 검증 완료 (총 97개 테스트 100% Pass, ruff/mypy 무결점)
 - **Phase 33 (로그인 회원 비밀번호 변경 API 구현)**: `POST /api/v1/auth/password/change` 엔드포인트(`ChangePasswordRequest`, `ChangePasswordResponse`) 및 `MemberService.change_password` 구현(현재 비밀번호 PBKDF2 검증, 동일 비밀번호 거부, 8자/대소문자/숫자/특수문자 복잡도 검증, 소셜 계정 가드), 통합 테스트(`tests/test_password_change.py`) 4종 추가 및 101개 테스트 100% Pass 완료
 - **Phase 34 (도커 컨테이너 기동 시 Alembic 자동 마이그레이션 & 빌드 최적화)**: `Dockerfile`의 `CMD`를 `alembic upgrade head && uvicorn ...`로 갱신하여 배포 및 컨테이너 시작 시 DB 최신 스키마 자동 적용 보장. `.dockerignore` 신규 작성을 통해 `.git`, `.venv`, 캐시 등 불필요한 빌드 컨텍스트를 제외하여 이미지 빌드 최적화 완료 (총 101개 테스트 100% Pass)
+- **Phase 35 (공용 DB 보호 안전 인터락 & JWT/설정 안정화)**: 로컬 기동 시 암묵적 `create_all` 실행 가드(`AUTO_CREATE_TABLES` 및 인메모리 테스트 한정), 원격 Supabase DB 대상 로컬 마이그레이션 방지 인터락(`ALLOW_REMOTE_MIGRATION` 가드), 운영 환경 취약한 기본 JWT 시크릿 방치 방지 fail-fast 검증, `.env` 중복 키 정리 및 CORS 명시 완료 (총 104개 테스트 100% Pass, ruff 무결점)
 
 
 

@@ -70,9 +70,15 @@ logger = logging.getLogger("backend-core-api")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing backend-core-api services...")
-    # 개발 및 테스트 환경 편의를 위해 테이블이 없는 경우 자동 생성 시도
-    if settings.ENV in ("local", "test"):
+    # 인메모리 테스트 환경(SQLite)이거나 명시적으로 AUTO_CREATE_TABLES가 켜진 경우에만 create_all 실행
+    # 공용 Supabase DB 풀러를 가리키는 로컬 환경 등에서 암묵적 DDL 실행 및 스키마 불일치 방지
+    should_auto_create = settings.AUTO_CREATE_TABLES or (
+        settings.ENV == "test" and "sqlite" in settings.DATABASE_URL
+    )
+    if should_auto_create:
+        logger.info(
+            "Running Base.metadata.create_all for local/test schema initialization..."
+        )
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
     yield

@@ -98,6 +98,20 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
+    # 로컬 개발 환경에서 실수로 공용 원격 Supabase DB의 마이그레이션을 돌리는 사고 방지
+    if (
+        settings.ENV == "local"
+        and settings.is_remote_database()
+        and not settings.ALLOW_REMOTE_MIGRATION
+    ):
+        raise RuntimeError(
+            "\n[SAFETY INTERLOCK TRIGGERED]\n"
+            "ENV='local' 환경에서 원격 공용 DB(Supabase)를 대상으로 마이그레이션 실행이 감지되었습니다.\n"
+            "로컬에서 무단으로 마이그레이션을 실행하면 팀 공용 DB 스키마가 즉시 변경됩니다.\n"
+            "팀원과 조율 후 원격 마이그레이션을 실행하려면 다음 환경변수를 지정하고 다시 시도하세요:\n"
+            "  ALLOW_REMOTE_MIGRATION=true alembic upgrade head\n"
+        )
+
     asyncio.run(run_async_migrations())
 
 
