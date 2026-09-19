@@ -103,3 +103,48 @@ class GuestLoginResponse(CamelModel):
     @property
     def refresh_token_snake(self) -> str | None:
         return self.refresh_token
+
+
+class SignupRequest(CamelModel):
+    """회원가입 요청 (프론트엔드 SignupPage.jsx 연동 계약)"""
+
+    email: str = Field(..., min_length=1, max_length=255, description="이메일 주소")
+    password: str = Field(
+        ...,
+        min_length=8,
+        description="비밀번호 (8자 이상, 영문 대소문자/숫자/특수문자)",
+    )
+    nickname: str | None = Field(
+        default=None,
+        max_length=50,
+        description="닉네임 (미지정 시 이메일 아이디 자동 사용)",
+    )
+    birth_date: str | None = Field(default=None, description="생년월일 (YYYY-MM-DD)")
+    gender: str | None = Field(default=None, description="성별 (MALE, FEMALE)")
+    agree_terms: bool = Field(..., description="서비스 이용약관 동의 여부 (필수)")
+    agree_privacy: bool = Field(..., description="개인정보 처리방침 동의 여부 (필수)")
+    agree_ai_analysis: bool = Field(
+        default=False, description="AI 분석 활용 동의 여부 (선택)"
+    )
+
+
+class SignupResponse(CamelModel):
+    """회원가입 응답 (201 Created)"""
+
+    member_id: str
+    email: str
+    nickname: str
+    message: str = "회원가입이 완료되었습니다."
+
+
+class ConfirmSignupRequest(CamelModel):
+    """회원가입 확인 / 이메일 인증 요청"""
+
+    email: str = Field(..., min_length=1, description="인증 대상 이메일")
+    code: str = Field(..., min_length=1, description="인증 코드")
+
+
+class ResendSignupRequest(CamelModel):
+    """회원가입 인증코드 재전송 요청"""
+
+    email: str = Field(..., min_length=1, description="재전송 대상 이메일")

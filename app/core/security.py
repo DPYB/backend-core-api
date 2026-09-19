@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -11,6 +13,32 @@ from app.core.exceptions import UnauthorizedException
 security = HTTPBearer(auto_error=False)
 
 DEFAULT_TEST_MEMBER_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def hash_password(password: str) -> str:
+    """비밀번호 단방향 솔트 해싱 (PBKDF2-HMAC-SHA256)"""
+    salt = secrets.token_hex(16)
+    iterations = 100_000
+    pw_hash = hashlib.pbkdf2_hmac(
+        "sha256", password.encode("utf-8"), salt.encode("utf-8"), iterations
+    ).hex()
+    return f"{salt}${iterations}${pw_hash}"
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """단방향 해시된 비밀번호 검증"""
+    try:
+        parts = hashed_password.split("$")
+        if len(parts) != 3:
+            return False
+        salt, iterations_str, expected_hash = parts
+        iterations = int(iterations_str)
+        actual_hash = hashlib.pbkdf2_hmac(
+            "sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), iterations
+        ).hex()
+        return secrets.compare_digest(actual_hash, expected_hash)
+    except Exception:
+        return False
 
 
 def get_demo_member_id() -> uuid.UUID:

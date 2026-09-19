@@ -1,10 +1,11 @@
 import uuid
 
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.core.exceptions import UnauthorizedException
+from app.core.exceptions import AppException, UnauthorizedException
 from app.core.rate_limit import get_client_ip, guest_rate_limiter
 from app.core.security import (
     create_access_token,
@@ -13,14 +14,19 @@ from app.core.security import (
     decode_refresh_token,
 )
 from app.db.session import get_db
+from app.models.member import Member
 from app.schemas.auth import (
     AvailabilityRequest,
     AvailabilityResponse,
+    ConfirmSignupRequest,
     GuestLoginRequest,
     GuestLoginResponse,
     LoginRequest,
     LoginResponse,
     RefreshTokenRequest,
+    ResendSignupRequest,
+    SignupRequest,
+    SignupResponse,
     SocialLoginRequest,
     TokenResponse,
 )
@@ -98,6 +104,85 @@ async def issue_guest_token(
         role="guest",
         is_guest=True,
     )
+
+
+@router.post(
+    "/signup",
+    response_model=SignupResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="회원가입",
+)
+async def signup_member(
+    req: SignupRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SignupResponse:
+    """
+    정식 회원가입 엔드포인트:
+    - 이메일 중복 확인 (이미 존재 시 409 Conflict)
+    - 필수 약관 동의 검증 (미동의 시 400 Bad Request)
+    - 신규 회원 레코드 생성 및 비밀번호 단방향 해싱 저장
+    - 기본 책장(Default Shelf) 및 기본 대표 고양이 사서(CAT "블루", Lv.1) 자동 지급
+    - 약관 동의 이력 영속화
+    - 201 Created 반환
+    """
+    member = await MemberService.register_member(db, req)
+    return SignupResponse(
+        member_id=str(member.member_id),
+        email=member.email,
+        nickname=member.nickname,
+        message="회원가입이 완료되었습니다.",
+    )
+
+
+@router.post(
+    "/signup/confirm",
+    status_code=status.HTTP_200_OK,
+    summary="회원가입 인증 확인 (이메일 인증 단계 호환)",
+)
+async def confirm_signup(
+    req: ConfirmSignupRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    프론트엔드 이메일 인증(EmailVerification) 단계 호환 엔드포인트:
+    현재 이메일 발송 인프라 없이 즉시 가입 완료되므로, 회원이 존재하는지 확인 후 200 OK를 반환합니다.
+    """
+    clean_email = req.email.strip().lower()
+    stmt = select(Member).where(
+        Member.email == clean_email,
+        Member.deleted_at.is_(None),
+    )
+    res = await db.execute(stmt)
+    member = res.scalars().first()
+    if not member:
+        raise AppException(404, "MEMBER_NOT_FOUND", "가입되지 않은 이메일입니다.")
+
+    return {"message": "이메일 인증이 완료되었습니다.", "status": "ACTIVE"}
+
+
+@router.post(
+    "/signup/resend",
+    status_code=status.HTTP_200_OK,
+    summary="회원가입 인증코드 재전송 호환",
+)
+async def resend_signup_code(
+    req: ResendSignupRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """
+    프론트엔드 인증코드 재전송 호환 엔드포인트 (200 OK 반환).
+    """
+    clean_email = req.email.strip().lower()
+    stmt = select(Member).where(
+        Member.email == clean_email,
+        Member.deleted_at.is_(None),
+    )
+    res = await db.execute(stmt)
+    member = res.scalars().first()
+    if not member:
+        raise AppException(404, "MEMBER_NOT_FOUND", "가입되지 않은 이메일입니다.")
+
+    return {"message": "인증 코드가 재전송되었습니다."}
 
 
 @router.post(

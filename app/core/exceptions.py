@@ -82,6 +82,11 @@ class InvalidLibrarianDataException(AppException):
         super().__init__(status.HTTP_400_BAD_REQUEST, "INVALID_LIBRARIAN_DATA", message)
 
 
+class TermsNotAgreedException(AppException):
+    def __init__(self, message: str = "필수 약관에 모두 동의해야 합니다."):
+        super().__init__(status.HTTP_400_BAD_REQUEST, "TERMS_NOT_AGREED", message)
+
+
 # --- 401 Unauthorized ---
 class UnauthorizedException(AppException):
     def __init__(self, message: str = "인증에 실패했습니다."):
@@ -167,6 +172,11 @@ class BookAlreadyRegisteredException(AppException):
 class LibrarianAlreadyOwnedException(AppException):
     def __init__(self, message: str = "이미 보유하고 있는 사서 종류입니다."):
         super().__init__(status.HTTP_409_CONFLICT, "LIBRARIAN_ALREADY_OWNED", message)
+
+
+class EmailAlreadyExistsException(AppException):
+    def __init__(self, message: str = "이미 가입된 이메일입니다."):
+        super().__init__(status.HTTP_409_CONFLICT, "EMAIL_ALREADY_EXISTS", message)
 
 
 # --- 502 Bad Gateway ---

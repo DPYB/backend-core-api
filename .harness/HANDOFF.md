@@ -78,11 +78,6 @@
   - 신규 소셜 로그인, 토큰 갱신, 중복 확인, 프로필 조회/수정, 탈퇴 Cascade, 약관 동의/철회 테스트 6건 추가.
   - 총 50개 테스트 100% 통과 및 `ruff check`, `ruff format`, `mypy` 검증 완료.
 
-**다음 세션 시작 시**:
-1. Render Web Service 컨테이너 배포 및 환경변수 등록 (`DB_USER`, `DB_PASSWORD`, `JWT_SECRET_KEY`, `CORS_ORIGINS` 등).
-2. 중앙 `DPYB/.github` 킵얼라이브 워크플로우에 등록된 Core API 엔드포인트(`https://<app>.onrender.com/health`) 핑 수신 확인.
-3. `backend-ai-agent` 서버와의 사서/토론 모드 Function Calling(Tool) 연동 테스트 진행.
-
 ## 2026-09-14: 독서 진도율 자동 동기화 & 국립중앙도서관 API 캐싱/내결함성 강화
 - **독서 진도율 및 완독 상태/일시(completed_at) 자동 동기화 (TDD)**:
   - `core.library_book`에 `completed_at TIMESTAMPTZ NULL` 컬럼 추가 (Alembic `004_add_completed_at_to_library_book.py`).
@@ -95,10 +90,6 @@
 - **테스트 및 코드 품질**:
   - TDD 신규 단위/통합 테스트 7건 추가 (`tests/test_books.py` 4건, `tests/test_search.py` 3건).
   - 총 58개 테스트 100% 통과 (소요시간 1.34s) 및 `ruff check`, `ruff format`, `mypy app` 검증 완료.
-
-**다음 세션 시작 시**:
-1. 실환경 Render Web Service 컨테이너 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
-2. `backend-ai-agent` 서비스와의 Function Calling 연동 테스트.
 
 ## 2026-09-14: DPYB 조직 PR 템플릿 미니멀 Type B 다이어트 및 완전 중앙화
 - **공통 PR 템플릿 다이어트 (`DPYB/.github`)**:
@@ -126,10 +117,6 @@
 - **테스트 및 코드 품질**:
   - 신규 통합 테스트 3건 추가 (`tests/test_social_auth_and_members.py`), 총 61개 테스트 100% Pass (소요시간 1.54s).
   - `ruff check`, `ruff format`, `mypy app` 린트/타입 검증 완료.
-
-**다음 세션 시작 시**:
-1. 로컬 환경에서 `backend-core-api`(8000), `backend-ai-agent`(8001) 구동 후 `frontend-reader-web` E2E 연동 확인.
-2. Render Web Service 컨테이너 배포 및 Supabase 마이그레이션 적용.
 
 ## 2026-09-14: DPYB 전사 레포 Squash 머지 단일화 및 원클릭 커밋 자동화
 - **전사 레포 머지 전략 일괄 적용 (`gh api`)**:
@@ -172,14 +159,6 @@
 - **머지 및 브랜치 정리**:
   - PR [#6](https://github.com/DPYB/backend-core-api/pull/6) squash and merge 완료 (`324c30a`), `origin/develop` 동기화 및 로컬 피처 브랜치 정리 완료.
 
-**다음 세션 시작 시**:
-1. **로컬 풀스택 E2E 연동 검증** (`.harness/PLAN.md` 1번):
-   - `backend-core-api` (포트 8000) 구동
-   - `backend-ai-agent` (포트 8001, `CORE_API_BASE_URL=http://127.0.0.1:8000`) 구동
-   - `frontend-reader-web` 개발 서버 연동: 로그인 -> 3D 서재 -> 사서 추천 도서 클릭 및 `displayGenre`/표지 이미지 자동 채움 등록 E2E 검증
-2. **실환경 인프라 배포 및 무과금($0) 상시 가동 검증** (`.harness/PLAN.md` 2번):
-   - Render Web Service 신규 배포 및 환경변수 등록, Supabase 마이그레이션 확인, 중앙 킵얼라이브 연동 점검.
-
 ## 2026-09-15: 사서 월간 독서 리포트 통계 집계 API & 스톱워치 독서 세션 구축
 - **기획 요구사항 분석 및 불필요한 '중단' 상태 배제**:
   - `BookReadingStatus`에 '중단' 상태를 새로 추가하지 않고 기존 3단계 체제(`PLANNED`, `READING`, `COMPLETED`)를 유지하여 시스템 복잡도 최소화. 리포트 05번 항목은 "완독 도서 / 읽는 중 도서"로 일원화.
@@ -195,11 +174,6 @@
 - **테스트 및 품질 검증**:
   - `tests/test_reading_sessions.py` 5건, `tests/test_monthly_reports.py` 2건 추가 (총 74개 테스트 100% Pass).
   - `ruff check`, `ruff format`, `mypy app` 린트/타입 검사 100% 무결점 통과.
-
-**다음 세션 시작 시**:
-1. AI 에이전트 서비스(`backend-ai-agent`)에서 Core API의 `GET /api/v1/reports/monthly-stats` 연동 및 Gemini LLM 프롬프트(06번 성향 분석, 07번 독서 처방) 파이프라인 구현.
-2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
-3. 로컬 풀스택 E2E 연동 검증 및 Render 배포.
 
 ## 2026-09-15: 동물 사서 4종 페르소나 및 기본 표시명 동기화 (`SEA_SLUG` ➔ '누디')
 - **사서 4종 페르소나 카탈로그 및 기본 표시명 동기화 (`app/models/enums.py`)**:
@@ -221,11 +195,6 @@
   - `tests/test_librarians.py`: 사서 4종 페르소나 메타데이터 검증, `SEA_SLUG` 이름 생략 획득 시 "누디" 자동 지정, 프로필 조회 시 사서 정보 동기화 및 `/api/v1/members/me` 별칭 검증 3개 테스트 추가.
   - 총 77개 테스트 100% Pass (1.86s), `ruff check`, `ruff format`, `mypy app` 검사 100% 무결점 통과.
 
-**다음 세션 시작 시**:
-1. AI 에이전트 서비스(`backend-ai-agent`)에서 Core API `GET /api/v1/reports/monthly-stats` 연동 및 Gemini LLM 분석/처방 구현.
-2. 프론트엔드(`frontend-reader-web`)에서 스톱워치 모달(`POST /api/v1/reading-sessions`) 및 월간 리포트 뷰/PDF 다운로드 연동.
-3. 로컬 풀스택 E2E 연동 검증 (`.harness/PLAN.md` 1번) 및 Render 배포.
-
 ## 2026-09-16: 타 서비스(Frontend/AI Agent) 통신 계약 완벽 일치화 & 소셜 로그인 실환경 스펙 확정
 - **타 서비스 통신 계약 전수 분석 및 페이징 응답 듀얼 직렬화 (`app/schemas/common.py`, `app/schemas/library_book.py`, `app/schemas/scrap.py`)**:
   - `frontend-reader-web`의 `listLibraryBooks()`가 `res.books`, `listScraps()`가 `res.scraps`를 기대하고, `backend-ai-agent`는 `res.items`를 조회하는 불일치를 발굴 및 해결.
@@ -242,13 +211,6 @@
   - `backend-ai-agent`: 총 100개 테스트 100% Pass (37.31s).
   - `frontend-reader-web`: `npm run build` 번들 빌드 100% 성공.
 
-**다음 세션 시작 시**:
-1. Render Web Service 신규 생성 및 Dockerfile 기반 배포 설정 (동적 `$PORT` 바인딩).
-2. Render 대시보드에 확정된 환경변수(`DB_*`, `JWT_SECRET_KEY`, `GOOGLE_CLIENT_ID`, `KAKAO_CLIENT_ID`, `CORS_ORIGINS`, `NL_API_CERT_KEY`) 등록 및 배포.
-3. 실환경 배포 인스턴스 헬스체크 (`GET /health`) 및 중앙 `DPYB/.github` 킵얼라이브 워크플로우 핑 수신 확인.
-
----
-
 ## 2026-09-17: KDC 제6판 문학(800) 표준 교정 및 SF 소설 키워드 스마트 오버라이드
 - **진행한 작업**:
   - `app/core/kdc_mapper.py`: DDC 서양식 문학 분류가 섞여 있던 `KDC_SUBJECT_MAPPING` 800번대를 한국도서관협회 KDC 제6판 기준(810 한국, 820 중국, 830 일본, 840 영미, 850 독일, 860 프랑스, 870 스페인, 880 이탈리아, 890 기타)으로 전면 교정. 《마션》(843)이 프랑스문학으로 오역되던 버그 해결.
@@ -257,8 +219,6 @@
   - `app/schemas/library_book.py`: 서재 도서 등록(`CreateLibraryBookRequest`) 및 수정(`UpdateLibraryBookRequest`) 모델 검증기에서 도서 제목(`title`)을 연동하여 SF 키워드 오버라이드 자동 반영.
   - `tests/test_kdc_mapper.py`, `tests/test_search.py`: KDC 843(영미소설), 820(중국), 830(일본) 매핑 및 《마션》 실서지 데이터 검색 시 `SF/과학소설`로 보정되는 단위/통합 테스트 추가.
   - 총 83개 단위/통합 테스트 100% 통과 및 `ruff check` 0 에러 검증.
-- **다음 세션에서 할 일**:
-  - 실환경 Render 배포 및 E2E 브라우저 최종 스모크 테스트.
 
 ## 2026-09-17: 화면 노출 우선순위 Subject 1순위 전면 보장 및 510번대 치료/건강 라우팅 보강
 - **진행한 작업**:
@@ -267,16 +227,12 @@
   - `app/main.py`: 콘솔(stdout) 및 10MB 크기 회전 파일(`logs/app.log`) 듀얼 로깅 파이프라인 구축 및 Uvicorn 로거 통합.
   - `tests/test_books.py`, `tests/test_search.py`, `tests/test_kdc_mapper.py`: 세부 주제 우선순위 반영 및 신규 매핑/키워드 검증 테스트 갱신 완료.
   - 단위/통합 테스트 83개 100% 통과 (소요시간 2.14s), `ruff check`, `mypy app` 검사 100% 무결점 통과.
-- **다음 세션에서 할 일**:
-  - Render Web Service 배포 및 실환경 헬스체크 연동 검증.
 
 ## 2026-09-17: 독서 기록 라우터 인증 의존성 표준화 (JWT & X-Member-Id 듀얼 지원)
 - **진행한 작업**:
   - `app/routers/records.py`: 하드코딩된 필수 `Header(..., alias="X-Member-Id")` 주입 방식을 전역 표준인 `Depends(get_authenticated_member_id)`로 전면 교체. 이를 통해 Bearer JWT 토큰과 `X-Member-Id` 헤더를 모두 수용하고 `AUTH_DISABLED` 테스트 환경에서도 일관되게 동작하도록 보장.
   - `tests/test_records.py`: 의존성 통일에 따른 인증 테스트 케이스 최신화 (`AUTH_DISABLED` 테스트 환경 자동 인증 대응).
   - 총 83개 단위/통합 테스트 100% 통과 및 `ruff check` 검증 완료.
-- **다음 세션에서 할 일**:
-  - Render 배포 및 실환경 E2E 점검.
 
 ## 2026-09-17: 독서 세션 도서별 하위 리소스 API & 월간 리포트 통계 확장
 - **진행한 작업**:
@@ -288,9 +244,6 @@
   - `app/services/report_service.py`: 월간 리포트 정량 통계 집계 시 `duration_seconds` 기반 총 독서 시간(`total_duration_minutes`) 정밀 계산, `totalSessionCount`, `avgSessionDurationMinutes`, 시작/종료 시각 기준 시간대(`timeDistribution`) 및 요일(`weekdayDistribution`) 집계 고도화.
   - `app/routers/reading_sessions.py`: 도서별 독서 세션 등록/조회 엔드포인트(`POST/GET /api/v1/books/{book_id}/reading-sessions`, `/api/v1/library/books/{book_id}/reading-sessions` 별칭 지원) 바인딩.
   - `tests/test_reading_sessions.py`, `tests/test_monthly_reports.py`: 신규 엔드포인트 및 통계 확장 통합 테스트 추가, 총 84개 테스트 100% Pass 및 `ruff check`, `mypy app` 무결점 검증.
-- **다음 세션에서 할 일**:
-  - Render 실환경 배포 및 Supabase 마이그레이션 (`alembic upgrade head`) 확인.
-  - `frontend-reader-web` 및 `backend-ai-agent` 연동 점검.
 
 ## 2026-09-18: KDC 분류 파서 앵커링 교정 및 키워드 오분류 원천 방어
 - **진행한 작업**:
@@ -308,6 +261,7 @@
     - 권차/판차 혼합 KDC (`5판 813.6`, `[5] 813.6`, `813.6/005`, `K813.6`, `v.2 813.72`) 대분류/세부주제 파싱 단위 테스트 6건 추가.
     - `"개발"`, `"자기개발"`의 철학/자기계발 매핑 및 `"소프트웨어 개발"`의 컴퓨터/IT 매핑 단위 테스트 3건 추가.
     - 총 84개 단위/통합 테스트 100% Pass (2.20s), `ruff check`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+
 ## 2026-09-18: 터미널 에러 로그(Errno 49) 원인 규명 및 해커톤 제출용 인증 플로우 검토
 - **터미널 대량 에러 로그 원인 분석 (`logs/app.log`)**:
   - 원인: 프론트엔드 로그아웃/새로고침 시 짧은 간격으로 연속 토큰 갱신(`POST /api/v1/auth/refresh`) 및 회원 조회(`GET /api/v1/users/me`) 호출이 발생할 때, `app/db/session.py`의 SQLAlchemy 비동기 엔진에 풀 재사용(`pool_pre_ping=True`, `pool_recycle`, `pool_size`) 설정이 없어 macOS Ephemeral Port가 고갈되며 `[Errno 49] Can't assign requested address` 및 DB 커넥션 중도 끊김(`ConnectionDoesNotExistError`) 에러가 다량 발생함.
@@ -315,6 +269,7 @@
 - **로그인/회원가입 기능 현황 및 해커톤 플로우 검토**:
   - 현재 백엔드는 `POST /api/v1/auth/login` 엔드포인트를 통해 이메일 기반 자동 생성(Get-or-Create, 기본책장+대표사서 지급) 및 Bearer JWT/HttpOnly 쿠키 발급이 정상 지원되는 상태.
   - 프론트엔드의 실제 회원가입 폼(`POST /api/v1/auth/signup`) 연동 여부 및 해커톤 데모 제출 방식(간편 로그인 유지 vs 정식 회원가입 플로우 신설)에 대해 팀 내 토의 진행 중으로, 확정 시 피드백 수신 후 작업 진행 예정.
+
 ## 2026-09-18: [Track 1] 긴급 보안 핫픽스 (X-Member-Id 인증 우회 취약점 원천 제거)
 - **사전 점검 및 사용처 조사**:
   - `backend-core-api`, `backend-ai-agent`, `frontend-reader-web`, GitHub Actions 전수 Grep 결과, 내부 서비스 크론이나 관리자 툴에서 `X-Member-Id` 헤더를 정당하게 신뢰하는 경로는 전무함을 확인.
@@ -332,9 +287,6 @@
   - `AGENTS.md` 및 `.harness/ARCHITECTURE.md`, `.harness/DECISIONS.md`: 레거시 헤더 병행 지원 문구를 삭제하고 Bearer JWT 단일 서명 검증 불변식 명문화.
 - **품질 검증**:
   - 총 87개 단위/통합 테스트 100% Pass (2.10s), `ruff check --fix .` 및 `mypy app` 0 에러/경고 통과.
-- **다음 세션에서 할 일**:
-  - 본 보안 핫픽스 PR 생성 및 리뷰 요청.
-  - 팀원 토의 결과 확정 시 피드백에 맞춰 정식/체험 인증 플로우 작업 진행.
 
 ## 2026-09-18: 해커톤 심사 대비 게스트 체험 모드(Guest JWT) 도입 및 무결점 Read-Only 락 구축
 - **게스트 토큰 발급 및 세션 유지 엔드포인트 (`POST /api/v1/auth/guest`)**:
@@ -356,18 +308,31 @@
 - **테스트 및 검증**:
   - `tests/test_guest_auth.py`: 게스트 토큰 신규 발급 및 클레임 규격 검증, 세션 연장(Refresh), Rate Limit 신규(5회 차단) vs 갱신(별도 버킷 통과) 분리 검증, DEMO_MEMBER_ID 읽기 매핑 검증, POST/PUT/PATCH/DELETE 전수 쓰기 차단(403 Forbidden) 검증 5건 추가.
   - 전체 단위/통합 테스트 92개 100% Pass (2.43s), `ruff check`, `mypy app` 린트/타입 검사 100% 무결점 통과.
+
+## 2026-09-19: Render 프로덕션 배포 완료 & 프론트엔드 회원가입(Signup) 연동 계획 수립
+- **실환경 인프라 배포 완결**:
+  - Render 무료 티어 Web Service(`https://backend-core-api.onrender.com`) 신규 배포 성공.
+  - Supabase Transaction Pooler(포트 6543) 기반 `GET /health` 200 OK (`{"status":"UP","database":"connected"}`) 정상 가동 검증 완료.
+  - 게스트 체험 모드 데모 회원 매핑(`DEMO_MEMBER_ID`) 환경변수 오버라이드 지원 확인.
+- **회원가입 기능 진단 및 계획 수립 (해결책 A)**:
+  - 프론트엔드 `SignupPage.jsx` 및 `authApi.js`가 요구하는 `POST /api/v1/auth/signup`, `POST /api/v1/auth/signup/confirm` 엔드포인트 구현 계획을 `.harness/PLAN.md`에 수립 완료.
+
+## 2026-09-19: 정식 회원가입(Signup) API 구현 및 전사 레포 정합성 완결
+- **전사 레포(`frontend-reader-web`, `backend-ai-agent`) 충돌 및 호환성 전수 점검**:
+  - `frontend-reader-web`: `authApi.js`의 `signup`, `confirmSignup`, `resendSignupCode` 함수와 `SignupPage.jsx`, `EmailVerification.jsx` 폼 스펙(`email`, `password`, `nickname`, `birth_date`, `gender`, `agree_terms`, `agree_privacy`, `agree_ai_analysis`)과 필드명/HTTP 상태코드 100% 일치 확인.
+  - `backend-ai-agent`: 회원 정보는 `backend-core-api`의 DB를 직접 참조하지 않고 RAG/사서 대화 추론 시 전달받으므로 충돌 지점 전무함 확인.
+- **스키마 확장 및 마이그레이션**:
+  - `alembic/versions/007_add_password_hash_to_members.py`: `member.members`에 `password_hash VARCHAR(255) NULL` 컬럼 추가.
+  - `app/models/member.py`: `password_hash` 필드 ORM 매핑.
+  - `app/core/security.py`: `hash_password` 및 `verify_password` (PBKDF2-HMAC-SHA256 100,000회 솔트 해싱) 단방향 암호화 구축.
+- **비즈니스 로직 및 엔드포인트 구현**:
+  - `app/core/exceptions.py`: `EmailAlreadyExistsException` (409 Conflict, `EMAIL_ALREADY_EXISTS`), `TermsNotAgreedException` (400 Bad Request, `TERMS_NOT_AGREED`) 추가.
+  - `app/schemas/auth.py`: `SignupRequest`, `SignupResponse`, `ConfirmSignupRequest`, `ResendSignupRequest` 작성.
+  - `app/services/member_service.py`: `register_member` 메서드 구현 (필수약관 검증, 이메일 중복 체크, 비밀번호 해싱 저장, 기본 책장 및 기본 대표 고양이 사서 CAT "블루" Lv.1 자동 지급, 활성 약관 동의 이력 영속화).
+  - `app/routers/auth.py`: `POST /api/v1/auth/signup` (201 Created), `POST /api/v1/auth/signup/confirm` (200 OK, 프론트 이메일 인증 통과 호환), `POST /api/v1/auth/signup/resend` (200 OK 호환) 엔드포인트 바인딩.
+- **테스트 및 코드 품질**:
+  - `tests/test_signup.py`: 5건 단위/통합 테스트 추가 (정상 가입 및 기본 책장/사서/약관동의 지급, 중복 가입 409, 필수약관 미동의 400, Pydantic 검증 오류, confirm/resend 호환).
+  - 전체 단위/통합 테스트 97개 100% Pass (2.47s), `ruff check`, `mypy app` 무결점 0 에러 통과.
 - **다음 세션에서 할 일**:
-  - `feat/guest-jwt-demo-mode` 브랜치 커밋 및 PR 생성.
-  - Render 배포 후 프론트엔드/AI 에이전트 서비스와 체험 모드 E2E 연동 점검.
-
-
-
-
-
-
-
-
-
-
-
+  - 커밋 생성 및 PR 발행, 사람 최종 승인 후 develop 머지 및 Render 자동 배포/실환경 마이그레이션(`alembic upgrade head`) 확인.
 
