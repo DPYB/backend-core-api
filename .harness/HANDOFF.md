@@ -333,6 +333,17 @@
 - **테스트 및 코드 품질**:
   - `tests/test_signup.py`: 5건 단위/통합 테스트 추가 (정상 가입 및 기본 책장/사서/약관동의 지급, 중복 가입 409, 필수약관 미동의 400, Pydantic 검증 오류, confirm/resend 호환).
   - 전체 단위/통합 테스트 97개 100% Pass (2.47s), `ruff check`, `mypy app` 무결점 0 에러 통과.
+
+## 2026-09-19: 프로젝트 정식 약관 3종 전문(Full Text) 데이터 마이그레이션
+- **약관 원본 정합성 검토 및 마이그레이션 구축**:
+  - `alembic/versions/008_update_baseline_terms_content.py`: 기존 개발용 단문 요약 약관을 안전하게 만료(expired_at = now())하고 새 약관 전문(서비스 이용약관 11개 조항, 개인정보 수집 및 이용 동의 7개 조항, AI 분석 기능 이용 동의 5개 조항)을 새 row로 영속화.
+  - `ck_terms_effective_period` 체크 제약조건 및 부분 유니크 인덱스(`uk_terms_active_code`)와 동의 이력(`member.member_agreements`) 관계 무결성 완벽 보존.
+- **실환경 검증 및 품질**:
+  - Supabase PostgreSQL DB에 `alembic upgrade head` 성공 반영 (007 -> 008).
+  - Render 배포 API `GET /api/v1/terms` 호출 시 신규 3종 전문 정상 반환 확인.
+  - 전체 97개 테스트 100% Pass, `ruff check`, `mypy app` 0 에러 통과.
 - **다음 세션에서 할 일**:
-  - 커밋 생성 및 PR 발행, 사람 최종 승인 후 develop 머지 및 Render 자동 배포/실환경 마이그레이션(`alembic upgrade head`) 확인.
+  - 본 마이그레이션 커밋 푸시 및 PR 생성/머지.
+  - 프론트엔드(`frontend-reader-web`)에서 성별 '선택 안 함' 및 마이페이지 프로필 수정 UI 연동.
+
 
