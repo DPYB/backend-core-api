@@ -12,12 +12,15 @@ from app.core.security import (
     create_guest_token,
     create_refresh_token,
     decode_refresh_token,
+    get_authenticated_member_id,
 )
 from app.db.session import get_db
 from app.models.member import Member
 from app.schemas.auth import (
     AvailabilityRequest,
     AvailabilityResponse,
+    ChangePasswordRequest,
+    ChangePasswordResponse,
     ConfirmSignupRequest,
     GuestLoginRequest,
     GuestLoginResponse,
@@ -370,3 +373,26 @@ async def check_availability(
         is_available=is_available,
         message=msg,
     )
+
+
+@router.post(
+    "/password/change",
+    response_model=ChangePasswordResponse,
+    status_code=status.HTTP_200_OK,
+    summary="로그인 회원 비밀번호 변경",
+)
+async def change_password(
+    req: ChangePasswordRequest,
+    member_id: uuid.UUID = Depends(get_authenticated_member_id),
+    db: AsyncSession = Depends(get_db),
+) -> ChangePasswordResponse:
+    """
+    로그인된 회원의 비밀번호를 변경합니다.
+    - 현재 비밀번호 검증 (불일치 시 401 Unauthorized)
+    - 동일 비밀번호 거부 (400 Bad Request)
+    - 복잡도 정책: 8자 이상, 영문 대/소문자, 숫자, 특수문자 포함 (400 Bad Request)
+    """
+    await MemberService.change_password(
+        db, member_id, req.current_password, req.new_password
+    )
+    return ChangePasswordResponse()

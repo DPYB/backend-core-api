@@ -487,3 +487,56 @@ class MemberService:
             return True, "사용 가능한 닉네임입니다."
 
         raise AppException(400, "INVALID_FIELD", f"지원하지 않는 필드입니다: {field}")
+
+    @staticmethod
+    async def change_password(
+        db: AsyncSession,
+        member_id: uuid.UUID,
+        current_password: str,
+        new_password: str,
+    ) -> None:
+        """
+        로그인된 회원의 비밀번호를 변경합니다:
+        1. 회원 및 기존 비밀번호 해시 존재 여부 검증 (소셜 계정 등 미설정 시 400 거부)
+        2. 현재 비밀번호 일치 검증 (불일치 시 401 Unauthorized)
+        3. 새 비밀번호와 현재 비밀번호 동일 여부 검증 (동일 시 400 Bad Request)
+        4. 새 비밀번호 해싱 후 영속화
+        """
+        import re
+
+        from app.core.security import hash_password, verify_password
+
+        member = await MemberService.get_member_by_id(db, member_id)
+
+        if not member.password_hash:
+            raise AppException(
+                400,
+                "SOCIAL_ACCOUNT_PASSWORD_UNAVAILABLE",
+                "소셜 로그인 계정은 비밀번호 변경을 지원하지 않습니다.",
+            )
+
+        if not verify_password(current_password, member.password_hash):
+            raise AppException(
+                401,
+                "INVALID_PASSWORD",
+                "현재 비밀번호가 일치하지 않습니다.",
+            )
+
+        if current_password == new_password:
+            raise AppException(
+                400,
+                "SAME_AS_CURRENT_PASSWORD",
+                "현재 비밀번호와 다른 비밀번호를 사용해 주세요.",
+            )
+
+        # 비밀번호 복잡도 검증: 8자 이상, 영문 대/소문자, 숫자, 특수문자
+        pw_re = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$")
+        if not pw_re.match(new_password):
+            raise AppException(
+                400,
+                "PASSWORD_TOO_WEAK",
+                "비밀번호는 8자 이상이며 영문 대/소문자, 숫자, 특수문자를 포함해야 합니다.",
+            )
+
+        member.password_hash = hash_password(new_password)
+        await db.commit()
