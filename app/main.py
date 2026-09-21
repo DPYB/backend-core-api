@@ -13,6 +13,7 @@ from app.core.security import decode_jwt_token
 from app.db.base import Base
 from app.db.session import engine
 from app.routers import (
+    admin_router,
     auth_router,
     books_router,
     health_router,
@@ -105,9 +106,28 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 게스트 체험 모드 무결점 Read-Only 락 미들웨어
+    # 게스트 체험 모드 무결점 Read-Only 락 및 데모 계정 Allowlist 쓰기 가드 미들웨어
+    # 데모 계정(DEMO_MEMBER_ID) 허용 쓰기 라우트 템플릿 (기타 모든 POST/PUT/PATCH/DELETE는 403 차단)
+    demo_allowed_write_routes = {
+        ("POST", "/api/v1/library/books"),
+        ("PATCH", "/api/v1/library/books/{book_id}"),
+        ("PATCH", "/api/v1/library/books/{book_id}/progress"),
+        ("PATCH", "/api/v1/library/books/{book_id}/order"),
+        ("PATCH", "/api/v1/library/books/{book_id}/shelf"),
+        ("POST", "/api/v1/library/books/{book_id}/scraps"),
+        ("PATCH", "/api/v1/library/scraps/{scrap_id}"),
+        ("POST", "/api/v1/reading-sessions"),
+        ("POST", "/api/v1/books/{book_id}/reading-sessions"),
+        ("POST", "/api/v1/library/books/{book_id}/reading-sessions"),
+        ("POST", "/api/v1/records"),
+        ("PATCH", "/api/v1/librarians/{librarian_id}/representative"),
+        ("PATCH", "/api/v1/librarians/{librarian_id}"),
+        ("POST", "/api/v1/auth/logout"),
+        ("POST", "/api/v1/auth/refresh"),
+    }
+
     @app.middleware("http")
-    async def guest_readonly_middleware(request: Request, call_next):
+    async def account_security_middleware(request: Request, call_next):
         # GET, HEAD, OPTIONS는 모든 사용자 및 게스트에게 항상 허용
         if request.method in ("GET", "HEAD", "OPTIONS"):
             return await call_next(request)
@@ -123,6 +143,8 @@ def create_app() -> FastAPI:
             try:
                 payload = decode_jwt_token(token)
                 sub_raw = str(payload.get("sub") or "")
+
+                # 1. 게스트 토큰 (Read-Only) 차단
                 if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
                     return JSONResponse(
                         status_code=403,
@@ -131,6 +153,51 @@ def create_app() -> FastAPI:
                             "message": "체험 모드(게스트)에서는 읽기 전용으로만 이용 가능합니다. 변경 작업을 수행하려면 로그인해 주세요.",
                         },
                     )
+
+                # 2. 공개 데모 계정 (DEMO_MEMBER_ID) 쓰기 허용 목록(Allowlist) 가드
+                if sub_raw == settings.DEMO_MEMBER_ID:
+                    # FastAPI 라우트 템플릿 매칭 검사
+                    matched = False
+                    for route in request.app.routes:
+                        match, _ = route.matches(request.scope)
+                        if match.name == "FULL":
+                            # 1) 일반 Route 인 경우
+                            if (
+                                hasattr(route, "path")
+                                and (request.method, getattr(route, "path"))
+                                in demo_allowed_write_routes
+                            ):
+                                matched = True
+                                break
+                            # 2) APIRouter include(_IncludedRouter) 된 하위 후보군 탐색
+                            if hasattr(route, "effective_candidates"):
+                                for cand in route.effective_candidates():
+                                    cand_match, _ = cand.matches(request.scope)
+                                    if cand_match.name == "FULL":
+                                        cand_path = getattr(cand, "path", None)
+                                        if (
+                                            request.method,
+                                            cand_path,
+                                        ) in demo_allowed_write_routes:
+                                            matched = True
+                                            break
+                            if matched:
+                                break
+
+                    if not matched:
+                        logger.warning(
+                            "Demo account attempted unauthorized mutation: %s %s",
+                            request.method,
+                            request.url.path,
+                        )
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "code": "DEMO_ACCOUNT_PROTECTED",
+                                "message": "데모 계정 보호 정책에 의해 허용되지 않는 변경 작업입니다.",
+                            },
+                        )
+
             except Exception:
                 # 잘못된 토큰 등은 라우터/엔드포인트의 보안 의존성이 401로 적절히 처리하도록 통과
                 pass
@@ -142,6 +209,7 @@ def create_app() -> FastAPI:
 
     # 라우터 등록
     app.include_router(health_router)
+    app.include_router(admin_router)
     app.include_router(auth_router)
     app.include_router(users_router)
     app.include_router(terms_router)

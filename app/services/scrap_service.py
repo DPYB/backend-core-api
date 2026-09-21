@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import (
+    DemoQuotaExceededException,
     LibraryBookAccessDeniedException,
     LibraryBookNotFoundException,
     ScrapAccessDeniedException,
@@ -41,6 +43,20 @@ class ScrapService:
             raise LibraryBookAccessDeniedException(
                 "해당 도서에 대한 접근 권한이 없습니다."
             )
+
+        # 데모 계정 도서당 스크랩 쿼터(상한) 검증
+        if str(member_id) == settings.DEMO_MEMBER_ID:
+            active_scraps_count_stmt = select(func.count(Scrap.id)).where(
+                Scrap.book_id == book_id,
+                Scrap.deleted_at.is_(None),
+            )
+            active_scraps_count = (
+                await db.execute(active_scraps_count_stmt)
+            ).scalar() or 0
+            if active_scraps_count >= settings.DEMO_MAX_SCRAPS_PER_BOOK:
+                raise DemoQuotaExceededException(
+                    f"데모 계정의 도서당 최대 스크랩 수({settings.DEMO_MAX_SCRAPS_PER_BOOK}개)를 초과할 수 없습니다."
+                )
 
         scrap = Scrap(
             book_id=book_id,

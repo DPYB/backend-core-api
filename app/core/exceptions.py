@@ -124,6 +124,22 @@ class GuestReadOnlyModeException(AppException):
         super().__init__(status.HTTP_403_FORBIDDEN, "GUEST_READONLY_MODE", message)
 
 
+class DemoAccountProtectedException(AppException):
+    def __init__(
+        self,
+        message: str = "데모 계정 보호 정책에 의해 허용되지 않는 변경 작업입니다.",
+    ):
+        super().__init__(status.HTTP_403_FORBIDDEN, "DEMO_ACCOUNT_PROTECTED", message)
+
+
+class DemoQuotaExceededException(AppException):
+    def __init__(
+        self,
+        message: str = "데모 계정의 최대 생성 한도(Quota)를 초과했습니다.",
+    ):
+        super().__init__(status.HTTP_403_FORBIDDEN, "DEMO_QUOTA_EXCEEDED", message)
+
+
 # --- 429 Too Many Requests ---
 class RateLimitExceededException(AppException):
     def __init__(

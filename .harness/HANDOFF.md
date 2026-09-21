@@ -409,3 +409,73 @@
   - GitHub 레포지토리 Settings > Secrets and variables > Actions에 `RENDER_DEPLOY_HOOK_URL` 등록 필요.
   - 변경 사항 브랜치 생성/커밋 및 PR 머지 진행.
 
+## 2026-09-21: 해커톤 공개 데모 계정 동시 접속 보호 & 쿼터(상한) 및 멱등 리셋 설계 완료
+- **배경 및 요구사항 분석**:
+  - 해커톤 사이트에 정식 데모 계정 정보가 공개됨에 따라 3인 이상 동시 접속 시 발생할 수 있는 데이터 오염, 계정 탈취(비밀번호/이메일 변경, 탈퇴), 3D 서재 시연 뷰 파괴를 방지하기 위한 보안 및 데이터 관리 대책 수립.
+  - 게스트(Read-Only)와 차별화하여 심사위원의 쓰기 체험(도서 등록, 스크랩, 세션 기록)을 온전히 보장하되, 무한 증식과 화면 오염을 막기 위한 전략 확정.
+- **확정된 4대 방어 및 관리 아키텍처**:
+  1. **Route Template 기반 Allowlist 쓰기 가드**:
+     - `FastAPI` 라우트 패턴 매칭으로 데모 계정(`DEMO_MEMBER_ID`)의 허용된 쓰기 경로만 통과.
+     - 비밀번호 변경(`POST /auth/password/change`), 탈퇴(`DELETE /users/me`), 프로필 변경(`PATCH /users/me`), 도서 삭제 등 파괴적/자격증명 조작 요청 일괄 `403 Forbidden` (`code: DEMO_ACCOUNT_PROTECTED`) 차단.
+  2. **도서/스크랩 쿼터(Quota) 상한 가드**:
+     - 활성 도서 최대 25권(시드 16권 + 여유 9권), 도서당 스크랩 10개 제한 초과 시 `403 Forbidden` (`DEMO_QUOTA_EXCEEDED`).
+  3. **헤더 시크릿 보호 멱등 리셋 API (`POST /api/v1/admin/demo/reset`)**:
+     - `X-Admin-Key` 검증, 시드 정의(SSOT)를 재사용하여 시드 외 잉여 도서/스크랩/세션을 트랜잭션 내 일괄 정리하고 시연 도서 진도율을 멱등하게 복구.
+  4. **GitHub Actions 새벽 자동 청소 로봇 (`.github/workflows/cleanup-demo.yml`)**:
+     - 매일 KST 04:00 (UTC 19:00) 스케줄 + 웜업 핑 + 리셋 API 호출 및 실패 알림.
+- **다음 세션에서 할 일**:
+  - `.harness/PLAN.md`에 정의된 4단계 구현 진행:
+    1. Phase 1: Core API Route Template 기반 Allowlist 가드 & 쿼터 구현 및 TDD 검증 (`tests/test_demo_account_guard.py`).
+    2. Phase 2: 시드 SSOT 정의 및 관리자 리셋 엔드포인트 구현 (`POST /api/v1/admin/demo/reset`).
+    3. Phase 3: GitHub Actions 새벽 리셋 워크플로우 등록.
+    4. Phase 4: 프론트/AI 에이전트 연동 체크 및 발표용 격리 계정 확보.
+
+## 2026-09-21: [Phase 1 완료] Route Template 기반 데모 쓰기 Allowlist 가드 & 쿼터 상한 구축
+- **진행한 작업**:
+  - `app/config.py`: 데모 쿼터(`DEMO_MAX_BOOKS=25`, `DEMO_MAX_SCRAPS_PER_BOOK=10`) 및 관리자 키(`ADMIN_API_KEY`) 환경설정 추가.
+  - `app/core/exceptions.py`: `DemoAccountProtectedException`(403 `DEMO_ACCOUNT_PROTECTED`) 및 `DemoQuotaExceededException`(403 `DEMO_QUOTA_EXCEEDED`) 403 예외 2종 신설.
+  - `app/main.py`: `account_security_middleware` 구축.
+    - 데모 계정(`DEMO_MEMBER_ID`)의 JWT 토큰 감지 시, FastAPI 라우팅 구조(APIRoute 및 `_IncludedRouter` 하위 후보군)를 전수 순회하여 허용된 쓰기 템플릿(`demo_allowed_write_routes`)에 매칭되지 않는 모든 상태 변경 요청(비밀번호 변경, 회원 탈퇴, 프로필 수정, 도서 삭제 등)을 `403 Forbidden` (`DEMO_ACCOUNT_PROTECTED`)으로 차단.
+    - 도서 등록, 진도율 수정, 순서 변경, 책장 이동, 스크랩 생성/수정, 독서 세션 생성, 독서 기록 작성, 사서 대표/이름 변경, 로그아웃, 토큰 갱신 등 심사위원 시연에 필수적인 쓰기 작업은 안전하게 통과.
+  - `app/services/book_service.py`: `create_book` 시 데모 계정의 활성 도서(`deleted_at IS NULL`)가 25권 이상일 경우 403 `DEMO_QUOTA_EXCEEDED` 차단 가드 적용.
+  - `app/services/scrap_service.py`: `create_scrap` 시 데모 계정의 해당 도서 활성 스크랩이 10개 이상일 경우 403 `DEMO_QUOTA_EXCEEDED` 차단 가드 적용.
+  - `.env.example`: 신규 환경변수 템플릿 가이드 동기화.
+  - `tests/test_demo_account_guard.py`:
+    1. 데모 허용 쓰기 라우트(도서 등록, 진도율 수정, 스크랩 등록/수정, 세션 기록) 정상 동작 검증
+    2. 데모 파괴적 라우트(비번 변경, 탈퇴, 프로필 수정, 도서 삭제, 책장 생성) 403 차단 검증
+    3. 데모 계정 도서 Quota(25권) 초과 등록 차단 검증
+    4. 데모 계정 도서당 스크랩 Quota(10개) 초과 등록 차단 검증
+    5. 일반 회원 계정은 가드/상한 제약 없이 100% 정상 통과(무회귀) 검증
+- **품질 검증**:
+  - 단위/통합 테스트 109개 100% Pass (3.00s 소요).
+  - `ruff check --fix .`, `ruff format .`, `mypy app` 0 에러/경고 무결점 통과.
+- **다음 할 일**:
+  - Phase 2 완료 및 커밋/푸시/PR 생성.
+  - Phase 3 진행: GitHub Actions 새벽 리셋 워크플로우 구축(`.github/workflows/cleanup-demo.yml`).
+
+## 2026-09-21: [Phase 2 완료] 데모 시드 SSOT 정의 및 관리자 멱등 리셋 API 구축
+- **진행한 작업**:
+  - `app/services/demo_seed_data.py`:
+    - 데모 계정 16권 도서, 스크랩, 완독상태, 진도율 메타데이터를 단일 진실 공급원(SSOT) 모듈로 분리 (`DEMO_SEED_BOOKS`, `DEMO_SEED_ISBNS`, `DEMO_SEED_BOOKS_BY_ISBN`).
+    - `scripts/seed_demo_library.py`에서도 중복 하드코딩을 제거하고 `DEMO_SEED_BOOKS`를 공유 참조하도록 리팩터링.
+  - `app/services/demo_reset_service.py`:
+    - `DemoResetService.reset_demo_account(db)` 비즈니스 로직 작성.
+    - `DEMO_MEMBER_ID` 계정의 활성 도서 중 시드 16권 외 추가 등록된 잉여 도서, 잉여 스크랩, 잉여 독서 세션, 잉여 감상평을 단일 트랜잭션 내에서 일괄 hard delete.
+    - 시드 16권 도서의 현재 진도율, 독서 상태, 완독일시를 시드 기준값으로 원복하고 소속 책장을 '기본 책장'으로 복원.
+  - `app/routers/admin.py`:
+    - `POST /api/v1/admin/demo/reset` 엔드포인트 구현.
+    - `verify_admin_key`: `X-Admin-Key` 헤더 수신 및 `secrets.compare_digest`를 통한 타이밍 공격 방지 안전 인증 검증 (누락 시 401, 불일치 시 403).
+    - `app/routers/__init__.py` 및 `app/main.py`에 `admin_router` 등록.
+  - `tests/test_demo_reset.py`:
+    1. 관리자 API 키 헤더 누락 시 401 `UNAUTHORIZED`, 잘못된 키 전송 시 403 `FORBIDDEN` 인증 실패 검증
+    2. 시드 도서 진도율 오염 및 잉여 도서/스크랩/세션 추가 후 리셋 호출 시 잉여 데이터 완전 정리 및 시드 도서 원복 검증
+    3. 동일 리셋 API 2회 연속 호출 시 멱등 성공 검증
+- **품질 검증**:
+  - 단위/통합 테스트 111개 100% Pass (3.15s 소요).
+  - `ruff check --fix .`, `ruff format .`, `mypy app` 64개 소스 파일 0 에러/경고 무결점 통과.
+- **다음 할 일**:
+  - 사용자의 요청에 따라 `feat[demo]: 공개 데모 계정 보호 가드 및 관리자 리셋 API 구현` 커밋 생성, `origin/feat/demo-account-guard` 원격 푸시, PR 생성.
+  - 이후 Phase 3(새벽 리셋 GitHub Actions 크론 워크플로우) 진행.
+
+
+
