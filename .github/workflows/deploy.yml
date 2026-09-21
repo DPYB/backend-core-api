@@ -1,0 +1,33 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-render-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Trigger Render Deploy Hook
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Deploy
+        env:
+          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK" ]; then
+            echo "::error::RENDER_DEPLOY_HOOK_URL secret is not set or empty."
+            exit 1
+          fi
+          echo "Triggering Render deploy hook..."
+          HTTP_STATUS=$(curl -s -o response.json -w "%{http_code}" -X POST "$RENDER_DEPLOY_HOOK")
+          echo "HTTP status code: $HTTP_STATUS"
+          cat response.json || true
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "::error::Render deploy hook returned status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "Render deploy hook triggered successfully!"
