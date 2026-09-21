@@ -37,6 +37,19 @@ def test_kdc_to_genre_mapping():
     assert kdc_to_genre("v.2 813.72") == GenreType.LITERATURE
     assert kdc_to_genre("5권 005.133") == GenreType.TECHNOLOGY
 
+    # 도서관 청구기호 라벨 (저자기호/접두어 결합) 검증
+    assert kdc_to_genre("KDC 813.6-박24ㄱ") == GenreType.LITERATURE
+    assert kdc_to_genre("320.1-이38ㅅ-v.1") == GenreType.SOCIAL_SCIENCE
+    assert kdc_to_genre("DDC 005.133-C12") == GenreType.TECHNOLOGY
+    assert kdc_to_genre("분류기호: 813.6/005") == GenreType.LITERATURE
+
+    # 5자리 ISBN 부가기호 (예: 03320 -> 320 사회과학, 93810 -> 810 문학, 03005 -> 005 기술과학)
+    assert kdc_to_genre("03320") == GenreType.SOCIAL_SCIENCE
+    assert kdc_to_genre("93810") == GenreType.LITERATURE
+    assert kdc_to_genre("03005") == GenreType.TECHNOLOGY
+    assert kdc_to_genre("부가기호: 03320") == GenreType.SOCIAL_SCIENCE
+    assert kdc_to_genre("[03810]") == GenreType.LITERATURE
+
 
 def test_genre_korean_names():
     assert GENRE_KOREAN_NAMES[GenreType.GENERAL] == "교양"
@@ -105,6 +118,8 @@ def test_kdc_to_subject_mapping():
     assert kdc_to_subject("030") == "인문교양/상식"
     assert kdc_to_subject("189") == "심리학"
     assert kdc_to_subject("320") == "경제/경영"
+    assert kdc_to_subject("03320") == "경제/경영"
+    assert kdc_to_subject("93810") == "한국문학"
     assert kdc_to_subject("510") == "건강/의학"
     assert kdc_to_subject("980") == "여행/지리"
     assert kdc_to_subject(None) is None

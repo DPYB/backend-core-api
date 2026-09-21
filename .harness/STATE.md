@@ -41,5 +41,7 @@
 - **Phase 37 (Render 자동 배포 Deploy Hook 연동 워크플로우 구축)**: Organization 권한 이슈로 인한 자동 배포 누락을 방지하기 위해 `develop` 푸시 및 수동 트리거(`workflow_dispatch`) 시 Render Deploy Hook POST 요청을 발송하는 `.github/workflows/deploy.yml` 파이프라인 구성 완료
 - **Phase 38 (공개 데모 계정 쓰기 Allowlist 가드 & 쿼터 상한 구축)**: 공개 데모 계정(`DEMO_MEMBER_ID`)의 자격증명/파괴적 변경(비번 변경, 탈퇴, 프로필 수정, 도서 삭제)을 Route Template 기반 매칭으로 403 차단(`DEMO_ACCOUNT_PROTECTED`), 도서 등록 및 독서 세션 등 시연 쓰기 작업만 선택적 허용, 활성 도서 25권 및 도서당 스크랩 10개 쿼터 상한 가드(`DEMO_QUOTA_EXCEEDED`) 구현 및 TDD 검증 완료 (총 109개 테스트 100% Pass, ruff/mypy 무결점)
 - **Phase 39 (데모 시드 SSOT 정의 및 관리자 멱등 리셋 API 구축)**: 데모 계정 16권 도서/스크랩 메타데이터 SSOT(`app/services/demo_seed_data.py`) 정의 및 시드 스크립트 공유화, `POST /api/v1/admin/demo/reset` 엔드포인트(`X-Admin-Key` 검증)를 통해 단일 격리 트랜잭션 내에서 잉여 도서/스크랩/세션 정리 및 시연 도서 진도율 멱등 복원 비즈니스 로직(`DemoResetService`) 구현 완료 (총 111개 테스트 100% Pass, ruff/mypy 무결점)
+- **Phase 40 (KDC 다계층 파서 리팩토링 & 5자리 부가기호/라벨 청구기호 자동 인식)**: 5자리 ISBN 부가기호(`03320`, `93810` 등), 도서관 청구기호 라벨(`320.1-박24ㄱ`, `KDC 813.6` 등), 표준 3자리/약식 1~2자리를 순차 추출하는 다계층 정규식 파이프라인(`extract_kdc_code`) 구축 및 단위 테스트 검증 완료 (총 111개 테스트 100% Pass, ruff 무결점)
+
 
 
