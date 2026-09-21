@@ -221,6 +221,15 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.PHILOSOPHY
     assert sub == "미술치료/심리요법"
 
+    # 8. 1차 방어선: API 세부 주제어("미술치료", "재테크") 직접 매핑 검증
+    genre, sub = parse_to_genre_and_subject("미술치료")
+    assert genre == GenreType.PHILOSOPHY
+    assert sub == "미술치료/심리요법"
+
+    genre, sub = parse_to_genre_and_subject("재테크")
+    assert genre == GenreType.SOCIAL_SCIENCE
+    assert sub == "경제/경영"
+
 
 def test_refine_subject_by_keywords():
     from app.core.kdc_mapper import refine_subject_by_keywords
