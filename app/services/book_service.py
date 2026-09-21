@@ -5,8 +5,10 @@ from datetime import UTC, datetime
 from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import (
     BookAlreadyRegisteredException,
+    DemoQuotaExceededException,
     InvalidFilterParameterException,
     InvalidPageValueException,
     InvalidReorderTargetException,
@@ -41,6 +43,20 @@ class BookService:
     async def create_book(
         db: AsyncSession, member_id: uuid.UUID, req: CreateLibraryBookRequest
     ) -> CreateLibraryBookResponse:
+        # 데모 계정 도서 등록 쿼터(상한) 검증
+        if str(member_id) == settings.DEMO_MEMBER_ID:
+            active_books_count_stmt = select(func.count(LibraryBook.id)).where(
+                LibraryBook.member_id == member_id,
+                LibraryBook.deleted_at.is_(None),
+            )
+            active_books_count = (
+                await db.execute(active_books_count_stmt)
+            ).scalar() or 0
+            if active_books_count >= settings.DEMO_MAX_BOOKS:
+                raise DemoQuotaExceededException(
+                    f"데모 계정의 최대 등록 도서 수({settings.DEMO_MAX_BOOKS}권)를 초과할 수 없습니다."
+                )
+
         # 1. 책장 확인 또는 기본 책장 배정
         shelf_id = req.shelf_id
         if shelf_id is None:

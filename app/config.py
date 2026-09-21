@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 14
     GUEST_TOKEN_EXPIRE_HOURS: int = 2
     DEMO_MEMBER_ID: str = "00000000-0000-0000-0000-000000000002"
+    DEMO_MAX_BOOKS: int = 25
+    DEMO_MAX_SCRAPS_PER_BOOK: int = 10
+    ADMIN_API_KEY: str = "dev-admin-key-change-in-prod"
     GOOGLE_CLIENT_ID: str | None = None
     KAKAO_CLIENT_ID: str | None = None
 

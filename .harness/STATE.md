@@ -39,5 +39,7 @@
 - **Phase 35 (공용 DB 보호 안전 인터락 & JWT/설정 안정화)**: 로컬 기동 시 암묵적 `create_all` 실행 가드(`AUTO_CREATE_TABLES` 및 인메모리 테스트 한정), 원격 Supabase DB 대상 로컬 마이그레이션 방지 인터락(`ALLOW_REMOTE_MIGRATION` 가드), 운영 환경 취약한 기본 JWT 시크릿 방치 방지 fail-fast 검증, `.env` 중복 키 정리 및 CORS 명시 완료 (총 104개 테스트 100% Pass, ruff 무결점)
 - **Phase 36 (데모 계정 서재 전수 보강 및 토론 기억 4종 풀세트 적재)**: 단행본 정식 ISBN 교정(달과 6펜스 `9788937462566`, 지대넓얕 1 `9791190313193`)으로 16권 전 도서 고화질 표지 100% 보장, 상위 5권 포함 16권 전체에 고품질 문장 스크랩(18건) 및 감상평(18건) 완비, 독서 타이머 세션 36건 16권 전 도서 분산 생성, 토론 페르소나 4종(`debate_critic`, `debate_counselor`, `debate_storyteller`, `debate_observer`) 통찰 5건을 768차원 벡터로 `agent.debate_insights`에 영속화하여 리포트 토론 키워드 및 AI 개인화 회상 메모리 완결 (전수 검증 완료)
 - **Phase 37 (Render 자동 배포 Deploy Hook 연동 워크플로우 구축)**: Organization 권한 이슈로 인한 자동 배포 누락을 방지하기 위해 `develop` 푸시 및 수동 트리거(`workflow_dispatch`) 시 Render Deploy Hook POST 요청을 발송하는 `.github/workflows/deploy.yml` 파이프라인 구성 완료
+- **Phase 38 (공개 데모 계정 쓰기 Allowlist 가드 & 쿼터 상한 구축)**: 공개 데모 계정(`DEMO_MEMBER_ID`)의 자격증명/파괴적 변경(비번 변경, 탈퇴, 프로필 수정, 도서 삭제)을 Route Template 기반 매칭으로 403 차단(`DEMO_ACCOUNT_PROTECTED`), 도서 등록 및 독서 세션 등 시연 쓰기 작업만 선택적 허용, 활성 도서 25권 및 도서당 스크랩 10개 쿼터 상한 가드(`DEMO_QUOTA_EXCEEDED`) 구현 및 TDD 검증 완료 (총 109개 테스트 100% Pass, ruff/mypy 무결점)
+- **Phase 39 (데모 시드 SSOT 정의 및 관리자 멱등 리셋 API 구축)**: 데모 계정 16권 도서/스크랩 메타데이터 SSOT(`app/services/demo_seed_data.py`) 정의 및 시드 스크립트 공유화, `POST /api/v1/admin/demo/reset` 엔드포인트(`X-Admin-Key` 검증)를 통해 단일 격리 트랜잭션 내에서 잉여 도서/스크랩/세션 정리 및 시연 도서 진도율 멱등 복원 비즈니스 로직(`DemoResetService`) 구현 완료 (총 111개 테스트 100% Pass, ruff/mypy 무결점)
 
 
