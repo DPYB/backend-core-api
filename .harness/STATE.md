@@ -37,6 +37,7 @@
 - **Phase 33 (로그인 회원 비밀번호 변경 API 구현)**: `POST /api/v1/auth/password/change` 엔드포인트(`ChangePasswordRequest`, `ChangePasswordResponse`) 및 `MemberService.change_password` 구현(현재 비밀번호 PBKDF2 검증, 동일 비밀번호 거부, 8자/대소문자/숫자/특수문자 복잡도 검증, 소셜 계정 가드), 통합 테스트(`tests/test_password_change.py`) 4종 추가 및 101개 테스트 100% Pass 완료
 - **Phase 34 (도커 컨테이너 기동 시 Alembic 자동 마이그레이션 & 빌드 최적화)**: `Dockerfile`의 `CMD`를 `alembic upgrade head && uvicorn ...`로 갱신하여 배포 및 컨테이너 시작 시 DB 최신 스키마 자동 적용 보장. `.dockerignore` 신규 작성을 통해 `.git`, `.venv`, 캐시 등 불필요한 빌드 컨텍스트를 제외하여 이미지 빌드 최적화 완료 (총 101개 테스트 100% Pass)
 - **Phase 35 (공용 DB 보호 안전 인터락 & JWT/설정 안정화)**: 로컬 기동 시 암묵적 `create_all` 실행 가드(`AUTO_CREATE_TABLES` 및 인메모리 테스트 한정), 원격 Supabase DB 대상 로컬 마이그레이션 방지 인터락(`ALLOW_REMOTE_MIGRATION` 가드), 운영 환경 취약한 기본 JWT 시크릿 방치 방지 fail-fast 검증, `.env` 중복 키 정리 및 CORS 명시 완료 (총 104개 테스트 100% Pass, ruff 무결점)
-
+- **Phase 36 (데모 계정 서재 전수 보강 및 토론 기억 4종 풀세트 적재)**: 단행본 정식 ISBN 교정(달과 6펜스 `9788937462566`, 지대넓얕 1 `9791190313193`)으로 16권 전 도서 고화질 표지 100% 보장, 상위 5권 포함 16권 전체에 고품질 문장 스크랩(18건) 및 감상평(18건) 완비, 독서 타이머 세션 36건 16권 전 도서 분산 생성, 토론 페르소나 4종(`debate_critic`, `debate_counselor`, `debate_storyteller`, `debate_observer`) 통찰 5건을 768차원 벡터로 `agent.debate_insights`에 영속화하여 리포트 토론 키워드 및 AI 개인화 회상 메모리 완결 (전수 검증 완료)
+- **Phase 37 (Render 자동 배포 Deploy Hook 연동 워크플로우 구축)**: Organization 권한 이슈로 인한 자동 배포 누락을 방지하기 위해 `develop` 푸시 및 수동 트리거(`workflow_dispatch`) 시 Render Deploy Hook POST 요청을 발송하는 `.github/workflows/deploy.yml` 파이프라인 구성 완료
 
 
