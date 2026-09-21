@@ -24,9 +24,6 @@
 
 ### 체크리스트
 
-#### Phase 3: GitHub Actions 새벽 리셋 워크플로우 구축
-- [ ] `.github/workflows/cleanup-demo.yml`: KST 04:00 크론 + Render 웜업 핑 + 관리자 리셋 API 호출 및 실패 알림 구성
-
 #### Phase 4: 전체 시스템(Frontend/AI Agent/운영) 연동 체크
 - [ ] 자격증명 노출 회수 (해커톤 제출 폼/문서 비공개 처리 또는 수정)
 - [ ] `backend-ai-agent`: 사서 대화 Redis 세션 키 `chat:{user_id}:{session_id}` 및 24h TTL 확인

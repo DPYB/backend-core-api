@@ -490,3 +490,17 @@
 - **품질 검증**:
   - 단위/통합 테스트 111개 100% Pass.
   - `ruff check .` 0 에러/경고 무결점 통과.
+
+## 2026-09-21: [Phase 3 완료] GitHub Actions 데모 계정 자동 청소 및 멱등 리셋 워크플로우 구축
+- **진행한 작업**:
+  - `.github/workflows/cleanup-demo.yml`:
+    - 중앙 킵얼라이브 가용 시간대(07:30~18:30) 분석을 반영하여, 일과 마감 직후 서버가 깨어있는 **KST 18:35 (UTC 09:35)** 스케줄 크론(`35 9 * * *`) 설정.
+    - 서버 콜드스타트 방지를 위한 선행 웜업 루프(최대 5회 시도) 및 \`X-Admin-Key\` 인증 기반 데모 리셋 엔드포인트(\`POST /api/v1/admin/demo/reset\`) 호출 파이프라인 완성.
+    - \`workflow_dispatch\` 수동 즉시 트리거 지원.
+  - 하네스 문서 최신화:
+    - `.harness/PLAN.md`: Phase 3 완료 체크 및 제거.
+    - `.harness/STATE.md`: Phase 41 스냅샷 기록.
+- **다음 할 일**:
+  - `feat[ci]: GitHub Actions 데모 계정 자동 청소 워크플로우 구축` 커밋, 푸시 및 PR 생성.
+  - Phase 4(전체 시스템 연동 체크 및 발표용 격리 계정 확보) 진행.
+
