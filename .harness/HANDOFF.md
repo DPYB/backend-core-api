@@ -504,3 +504,16 @@
   - `feat[ci]: GitHub Actions 데모 계정 자동 청소 워크플로우 구축` 커밋, 푸시 및 PR 생성.
   - Phase 4(전체 시스템 연동 체크 및 발표용 격리 계정 확보) 진행.
 
+## 2026-09-21: [Phase 42 완료] 미술치료/심리요법 KDC 500번대 오버라이드 조건 개선
+- **진행한 작업**:
+  - `app/core/kdc_mapper.py`:
+    - `parse_to_genre_and_subject`의 마지막 스마트 오버라이드 조건에서, `final_subject == "미술치료/심리요법"`일 때 `final_genre == GenreType.NONE`뿐만 아니라 `GenreType.TECHNOLOGY`까지 포괄하여 `GenreType.PHILOSOPHY`로 정상 승격되도록 조건 확장.
+    - 국립중앙도서관 KDC 513.8(의학/건강)으로 1차 분류되어 `TECHNOLOGY`가 채워진 상태에서도 《그림의 힘》 등 미술치료·심리치유 서적이 `PHILOSOPHY`(철학/심리)로 정상 라우팅 보장.
+  - `tests/test_kdc_mapper.py`:
+    - KDC 513.8 및 '그림의 힘' 입력 시 `PHILOSOPHY`와 `미술치료/심리요법`으로 승격되는 단위 테스트 추가.
+- **품질 검증**:
+  - 단위/통합 테스트 111개 100% Pass.
+  - `ruff check --fix .`, `ruff format .`, `mypy .` 0 에러/경고 무결점 통과.
+- **다음 할 일**:
+  - `feat[kdc]: 미술치료 및 심리치유 도서의 철학(PHILOSOPHY) 승격 오버라이드 조건 확장` 커밋, 푸시 및 PR 생성.
+

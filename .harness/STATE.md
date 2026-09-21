@@ -43,6 +43,7 @@
 - **Phase 39 (데모 시드 SSOT 정의 및 관리자 멱등 리셋 API 구축)**: 데모 계정 16권 도서/스크랩 메타데이터 SSOT(`app/services/demo_seed_data.py`) 정의 및 시드 스크립트 공유화, `POST /api/v1/admin/demo/reset` 엔드포인트(`X-Admin-Key` 검증)를 통해 단일 격리 트랜잭션 내에서 잉여 도서/스크랩/세션 정리 및 시연 도서 진도율 멱등 복원 비즈니스 로직(`DemoResetService`) 구현 완료 (총 111개 테스트 100% Pass, ruff/mypy 무결점)
 - **Phase 40 (KDC 다계층 파서 리팩토링 & 5자리 부가기호/라벨 청구기호 자동 인식)**: 5자리 ISBN 부가기호(`03320`, `93810` 등), 도서관 청구기호 라벨(`320.1-박24ㄱ`, `KDC 813.6` 등), 표준 3자리/약식 1~2자리를 순차 추출하는 다계층 정규식 파이프라인(`extract_kdc_code`) 구축 및 단위 테스트 검증 완료 (총 111개 테스트 100% Pass, ruff 무결점)
 - **Phase 41 (GitHub Actions 데모 계정 자동 청소 워크플로우 구축)**: 매일 KST 18:35(UTC 09:35, 일과 마감 직후 서버가 깨어있을 때) 자동 실행되는 데모 멱등 리셋 워크플로우(`.github/workflows/cleanup-demo.yml`) 구성 완료 (수동 트리거 지원 및 콜드스타트 워밍 핑 포함)
+- **Phase 42 (미술치료/심리요법 KDC 500번대 오버라이드 조건 개선)**: KDC 513.8(의학/건강)으로 1차 분류되어 TECHNOLOGY로 잡힌 미술치료·심리치유 도서(《그림의 힘》 등)가 PHILOSOPHY(철학/심리)로 정상 승격되도록 `parse_to_genre_and_subject`의 오버라이드 조건문 확장 및 단위 테스트 검증 완료 (총 111개 테스트 100% Pass, ruff/mypy 무결점)
 
 
 

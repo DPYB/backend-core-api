@@ -213,6 +213,14 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.LITERATURE
     assert sub == "영미소설"
 
+    # 7. 미술치료 / 그림의 힘 오버라이드: KDC 513.8 (기술과학/의학) -> PHILOSOPHY 승격 검증
+    genre, sub = parse_to_genre_and_subject(
+        "513.8",
+        title="그림의 힘",
+    )
+    assert genre == GenreType.PHILOSOPHY
+    assert sub == "미술치료/심리요법"
+
 
 def test_refine_subject_by_keywords():
     from app.core.kdc_mapper import refine_subject_by_keywords

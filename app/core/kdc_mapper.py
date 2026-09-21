@@ -492,7 +492,10 @@ def parse_to_genre_and_subject(
         # SF로 보정되었는데 장르가 NONE이거나 미분류면 문학(LITERATURE)으로 승격
         if final_subject == "SF/과학소설" and final_genre == GenreType.NONE:
             final_genre = GenreType.LITERATURE
-        elif final_subject == "미술치료/심리요법" and final_genre == GenreType.NONE:
+        elif final_subject == "미술치료/심리요법" and final_genre in (
+            GenreType.NONE,
+            GenreType.TECHNOLOGY,
+        ):
             final_genre = GenreType.PHILOSOPHY
 
     return final_genre, final_subject
