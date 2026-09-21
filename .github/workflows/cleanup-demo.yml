@@ -1,0 +1,60 @@
+name: Cleanup Demo Account (Daily 18:35 KST)
+
+on:
+  schedule:
+    # 매일 UTC 09:35 = KST 18:35 (일과 마감 18:30 웜업 직후 서버 깨어있을 때 즉시 정리)
+    - cron: "35 9 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: cleanup-demo-account
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    name: Reset Demo Account
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warm up Render Web Service (Cold Start Prevention)
+        run: |
+          BASE_URL="${{ vars.BACKEND_API_BASE_URL || 'https://backend-core-api.onrender.com' }}"
+          echo "Pinging health check at $BASE_URL/health..."
+          for i in {1..5}; do
+            HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 60 "$BASE_URL/health" || echo "000")
+            echo "Health check attempt $i: status $HTTP_STATUS"
+            if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+              echo "Backend is awake and healthy!"
+              break
+            fi
+            echo "Waiting 10 seconds before retry..."
+            sleep 10
+          done
+
+      - name: Call Admin Demo Reset API
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_API_KEY }}
+          BASE_URL: ${{ vars.BACKEND_API_BASE_URL || 'https://backend-core-api.onrender.com' }}
+        run: |
+          if [ -z "$ADMIN_KEY" ]; then
+            echo "::error::ADMIN_API_KEY secret is not set in GitHub repository secrets."
+            exit 1
+          fi
+
+          echo "Triggering demo account reset API at $BASE_URL/api/v1/admin/demo/reset..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/api/v1/admin/demo/reset" \
+            -H "X-Admin-Key: $ADMIN_KEY" \
+            -H "Content-Type: application/json" \
+            --max-time 30)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response Body: $BODY"
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "::error::Demo reset failed with status $HTTP_CODE: $BODY"
+            exit 1
+          fi
+
+          echo "Demo account reset completed successfully!"
