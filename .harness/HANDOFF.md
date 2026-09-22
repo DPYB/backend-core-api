@@ -517,3 +517,17 @@
 - **다음 할 일**:
   - `feat[kdc]: 미술치료 및 심리치유 도서의 철학(PHILOSOPHY) 승격 오버라이드 조건 확장` 커밋, 푸시 및 PR 생성.
 
+## 2026-09-22: [Phase 43 완료] 분류 파이프라인 내 도서명 하드코딩 제거 및 범용 키워드 SSOT 확립
+- **진행한 작업**:
+  - `backend-core-api`:
+    - `app/core/kdc_mapper.py`: `THERAPY_KEYWORDS`에서 특정 도서명인 `"그림의 힘"` 제거 (범용 도메인 키워드 `"미술치료"`, `"심리치료"`, `"마음치유"`, `"예술치료"` 유지).
+    - `tests/test_kdc_mapper.py`: 도서명 `"그림의 힘"`에 의존하던 7번 테스트를 `parse_to_genre_and_subject("513.8")`로 순수 KDC 기반 세부주제 도출 및 `PHILOSOPHY` 승격 검증으로 수정, `refine_subject_by_keywords` 테스트도 범용 도메인 키워드로 수정.
+  - `backend-ai-agent`:
+    - `app/infrastructure/national_library_client.py`: `map_kdc_to_genre` 내 키워드 루프에서 `"오디세이아"`, `"오뒷세이아"`, `"그림의 힘"` 도서명 하드코딩 삭제 (`"미술치료"`, `"심리"`, `"에세이"` 등 범용 키워드 및 `NON_CURATABLE_KEYWORDS` 유지).
+    - `tests/unit/test_recommend_metadata.py`: `title="그림의 힘"` 테스트를 범용 키워드 `title="미술치료 입문"`으로 갱신.
+- **품질 검증**:
+  - `backend-core-api`: 111개 단위/통합 테스트 100% Pass, `ruff check` 무결점.
+  - `backend-ai-agent`: 14개 단위 테스트 100% Pass, `ruff check` 무결점.
+- **다음 할 일**:
+  - 사용자의 요청에 따라 커밋 생성 및 푸시.
+

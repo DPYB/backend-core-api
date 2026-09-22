@@ -401,7 +401,6 @@ SF_KEYWORDS: tuple[str, ...] = (
 
 THERAPY_KEYWORDS: tuple[str, ...] = (
     "미술치료",
-    "그림의 힘",
     "심리치료",
     "마음치유",
     "예술치료",
@@ -416,7 +415,7 @@ def refine_subject_by_keywords(
     """
     KDC 분류 체계의 한계(외국 문학/소설의 SF/장르 미분류, 미술치료의 기술과학 오분류)를 보완하기 위한 스마트 오버라이드.
     - 1) 문학/소설군 도서의 제목/소개글에 SF 키워드가 포함되어 있으면 'SF/과학소설'로 자동 보정.
-    - 2) 도서 제목/소개글에 '미술치료', '그림의 힘' 등 심리/치유 키워드가 있으면 '미술치료/심리요법'으로 보정.
+    - 2) 도서 소개글/주제어에 '미술치료', '심리치료' 등 심리/치유 키워드가 있으면 '미술치료/심리요법'으로 보정.
     """
     target_subject = (subject or "").strip()
     text_to_check = f"{title or ''} {description or ''}".lower()
@@ -498,14 +497,15 @@ def parse_to_genre_and_subject(
     # 도서 제목/설명 기반 SF/치유 키워드 스마트 오버라이드
     if title:
         final_subject = refine_subject_by_keywords(title, final_subject)
-        # SF로 보정되었는데 장르가 NONE이거나 미분류면 문학(LITERATURE)으로 승격
-        if final_subject == "SF/과학소설" and final_genre == GenreType.NONE:
-            final_genre = GenreType.LITERATURE
-        elif final_subject == "미술치료/심리요법" and final_genre in (
-            GenreType.NONE,
-            GenreType.TECHNOLOGY,
-        ):
-            final_genre = GenreType.PHILOSOPHY
+
+    # SF 또는 미술치료로 보정/매핑되었을 때 장르 승격 불변식
+    if final_subject == "SF/과학소설" and final_genre == GenreType.NONE:
+        final_genre = GenreType.LITERATURE
+    elif final_subject == "미술치료/심리요법" and final_genre in (
+        GenreType.NONE,
+        GenreType.TECHNOLOGY,
+    ):
+        final_genre = GenreType.PHILOSOPHY
 
     return final_genre, final_subject
 

@@ -213,11 +213,8 @@ def test_parse_to_genre_and_subject():
     assert genre == GenreType.LITERATURE
     assert sub == "영미소설"
 
-    # 7. 미술치료 / 그림의 힘 오버라이드: KDC 513.8 (기술과학/의학) -> PHILOSOPHY 승격 검증
-    genre, sub = parse_to_genre_and_subject(
-        "513.8",
-        title="그림의 힘",
-    )
+    # 7. 미술치료 도메인 오버라이드: KDC 513.8 (기술과학/임상의학/치료법) -> 세부주제 "미술치료/심리요법" 및 PHILOSOPHY 승격 검증
+    genre, sub = parse_to_genre_and_subject("513.8")
     assert genre == GenreType.PHILOSOPHY
     assert sub == "미술치료/심리요법"
 
@@ -255,10 +252,10 @@ def test_refine_subject_by_keywords():
     # SF 키워드가 없는 일반 소설은 원본 유지
     assert refine_subject_by_keywords("오만과 편견", "영미소설") == "영미소설"
     assert refine_subject_by_keywords("노르웨이의 숲", "일본소설") == "일본소설"
-    # 1. 미술치료 / 그림의 힘 키워드 오버라이드
+    # 1. 미술치료 / 심리치유 범용 도메인 키워드 오버라이드
     assert (
         refine_subject_by_keywords(
-            "그림의 힘", "건강/의학", "최고의 명화들이 주는 치유의 에너지를 담은 책"
+            "마음의 위로", "건강/의학", "명화와 함께하는 미술치료의 힘"
         )
         == "미술치료/심리요법"
     )
