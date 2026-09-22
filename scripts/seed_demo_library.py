@@ -322,7 +322,7 @@ async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) ->
                         if book.reading_status == BookReadingStatus.COMPLETED
                         else 4,
                         read_at=target_created_at,
-                        weather=random.choice(["맑음", "흐림", "비"]),
+                        weather=random.choice(["clear", "cloudy", "rainy"]),
                         created_at=target_created_at,
                     )
                     db.add(new_rec)
@@ -352,7 +352,7 @@ async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) ->
         print(
             "-> 최근 독서 타이머 세션 로그 생성 중 (16권 전권 고른 분산 및 KST 시간대 정렬)..."
         )
-        weathers = ["맑음", "맑음", "맑음", "흐림", "비"]
+        weathers = ["clear", "clear", "clear", "cloudy", "rainy"]
         kst_hours_pool = [5, 6, 10, 14, 16, 19, 20, 22, 23]
 
         lo = month_start_utc

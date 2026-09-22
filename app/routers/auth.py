@@ -41,12 +41,15 @@ router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
 def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     """프론트엔드 새로고침 세션 복원을 위한 HttpOnly 쿠키를 설정합니다."""
+    # 프로덕션 또는 스테이징 등 HTTPS 크로스 도메인 환경에서는 SameSite=None, Secure=True 필수
+    is_production = settings.ENV in ("production", "staging")
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400,
         httponly=True,
-        samesite="lax",
+        samesite="none" if is_production else "lax",
+        secure=is_production,
         path="/",
     )
 
@@ -349,7 +352,13 @@ async def logout(response: Response) -> None:
     """
     사용자 세션을 종료하고 로그아웃합니다 (멱등성 보장, 쿠키 삭제, 204 No Content).
     """
-    response.delete_cookie(key="refresh_token", path="/")
+    is_production = settings.ENV in ("production", "staging")
+    response.delete_cookie(
+        key="refresh_token",
+        path="/",
+        samesite="none" if is_production else "lax",
+        secure=is_production,
+    )
     return None
 
 

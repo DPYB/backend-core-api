@@ -352,6 +352,24 @@ async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSe
 
 
 @pytest.mark.asyncio
+async def test_refresh_token_cookie_samesite_in_production(
+    client: AsyncClient, monkeypatch
+):
+    """프로덕션 환경에서 SameSite=None 및 Secure=True 쿠키 발급 검증"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "ENV", "production")
+
+    login_resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "prod_cookie@example.com"},
+    )
+    set_cookie_header = login_resp.headers.get("set-cookie", "")
+    assert "samesite=none" in set_cookie_header.lower()
+    assert "secure" in set_cookie_header.lower()
+
+
+@pytest.mark.asyncio
 async def test_logout_removes_refresh_cookie(client: AsyncClient):
     """로그아웃 호출 시 refresh_token 쿠키가 만료/삭제되는지 검증"""
     resp = await client.post("/api/v1/auth/logout")

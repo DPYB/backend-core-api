@@ -1,5 +1,16 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-09-22: 크로스 도메인 환경 SameSite=None 및 Secure 쿠키 설정 적용
+- **배경**: 프론트엔드(`https://ai0208.xyz`)에서 백엔드(`https://backend-core-api.onrender.com`)로 토큰 갱신(`POST /api/v1/auth/refresh`) 요청 시 `401 Unauthorized` 발생 확인.
+- **원인 분석**:
+  1. `app/routers/auth.py`의 `_set_refresh_cookie`가 `samesite="lax"`로 설정되어 있어 Cross-Site 간 POST 요청 시 브라우저가 보안 정책상 `Cookie` 헤더를 제외하고 전송함.
+  2. 요청 Body도 비어있어(`content-length: 0`) 백엔드에서 `token_str`이 `None`으로 판정되어 401 Unauthorized 반환.
+  3. 다른 팀원의 경우 브라우저의 Lax-allowing-unsafe 휴리스틱(로그인 후 약 2분간 크로스 사이트 POST 쿠키 임시 허용) 또는 메모리 내 토큰 유지 상태로 인해 일시적으로 정상 동작하는 것처럼 보였음.
+- **해결 조치**:
+  - `app/routers/auth.py`: `_set_refresh_cookie` 및 `logout` 엔드포인트에서 `settings.ENV`가 `production` 또는 `staging`인 경우 `samesite="none"`, `secure=True` 옵션이 적용되도록 개선. (로컬 개발 환경에서는 `lax` 유지)
+  - `tests/test_social_auth_and_members.py`: 프로덕션 환경 시 `SameSite=None; Secure` 쿠키 플래그 발급 검증 단위 테스트 추가.
+  - 린트(`uv run ruff check .`) 및 전체 테스트(`uv run pytest`) 112개 100% 통과 확인.
+
 ## 2026-09-11: FastAPI 마이그레이션 및 도메인 API 전수 구축
 - 기존 Java/Spring Boot `backend-book` 서비스를 Python 3.12, FastAPI, SQLAlchemy 2.0 (asyncpg), Alembic, Pydantic V2 스택으로 마이그레이션 완료.
 - Supabase PostgreSQL `core` 스키마 격리 DDL 및 ORM 모델 6종(`shelf`, `library_book`, `scrap`, `librarian_type_info`, `librarian_level`, `librarian`) 구축.
@@ -524,10 +535,19 @@
     - `tests/test_kdc_mapper.py`: 도서명 `"그림의 힘"`에 의존하던 7번 테스트를 `parse_to_genre_and_subject("513.8")`로 순수 KDC 기반 세부주제 도출 및 `PHILOSOPHY` 승격 검증으로 수정, `refine_subject_by_keywords` 테스트도 범용 도메인 키워드로 수정.
   - `backend-ai-agent`:
     - `app/infrastructure/national_library_client.py`: `map_kdc_to_genre` 내 키워드 루프에서 `"오디세이아"`, `"오뒷세이아"`, `"그림의 힘"` 도서명 하드코딩 삭제 (`"미술치료"`, `"심리"`, `"에세이"` 등 범용 키워드 및 `NON_CURATABLE_KEYWORDS` 유지).
-    - `tests/unit/test_recommend_metadata.py`: `title="그림의 힘"` 테스트를 범용 키워드 `title="미술치료 입문"`으로 갱신.
+## 2026-09-22: [Phase 44 완료] 데모 시드 스크립트 날씨 코드 표준화 (영문 condition 동기화)
+- **배경 및 원인 분석**:
+  - 사용자가 독서 타이머를 수작업으로 실행/완료할 때 프론트엔드는 Geolocation 및 Open-Meteo를 통해 영문 소문자 condition(`clear`, `cloudy`, `rainy`, `snowy`)을 백엔드로 전송함.
+  - 프론트엔드(`frontend-reader-web`)의 `ReadingSessionHistory.jsx`는 `s.weather` 값이 `clear`(☀️), `cloudy`(☁️), `rainy`(🌧️), `snowy`(❄️)일 때만 날씨 뱃지 아이콘을 렌더링하도록 구현되어 있었음.
+  - 하지만 기존 `scripts/seed_demo_library.py`는 날씨를 한글(`"맑음"`, `"흐림"`, `"비"`)로 주입하고 있어, 시드된 데모 계정에서 타이머 세션 기록을 조회했을 때 날씨 아이콘이 노출되지 않고 월간 리포트 통계에서도 키 불일치로 누락되고 있었음.
+- **진행한 작업**:
+  - `scripts/seed_demo_library.py`:
+    - `Record` 생성 시 `weather=random.choice(["clear", "cloudy", "rainy"])`로 수정.
+    - `ReadingSession` 생성 시 `weathers = ["clear", "clear", "clear", "cloudy", "rainy"]`로 수정.
 - **품질 검증**:
-  - `backend-core-api`: 111개 단위/통합 테스트 100% Pass, `ruff check` 무결점.
-  - `backend-ai-agent`: 14개 단위 테스트 100% Pass, `ruff check` 무결점.
+  - `ruff check .` 무결점 확인.
+  - 단위/통합 테스트 111개 100% Pass (`.venv/bin/pytest tests/`).
 - **다음 할 일**:
-  - 사용자의 요청에 따라 커밋 생성 및 푸시.
+  - 사용자 승인 후 커밋 및 푸시, PR 생성.
+
 
