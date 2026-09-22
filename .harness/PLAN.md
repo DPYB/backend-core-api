@@ -29,3 +29,4 @@
 - [ ] `backend-ai-agent`: 사서 대화 Redis 세션 키 `chat:{user_id}:{session_id}` 및 24h TTL 확인
 - [ ] `backend-ai-agent`: Gemini 전역 호출 상한 및 429 서킷브레이커/안내 문구 폴백 확인
 - [ ] 발표/심사 당일용 독립 비공개 계정 사전 확보
+
