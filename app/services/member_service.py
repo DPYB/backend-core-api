@@ -1,15 +1,16 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import AppException
 from app.models.enums import DEFAULT_LIBRARIAN_NAMES
 from app.models.librarian import Librarian
 from app.models.library_book import LibraryBook
-from app.models.member import Member
+from app.models.member import EmailVerification, Member
 from app.models.record import Record, RecordScrap
 from app.models.scrap import Scrap
 from app.models.shelf import Shelf
@@ -164,7 +165,6 @@ class MemberService:
         4. 기본 책장(Default Shelf) 및 기본 대표 고양이 사서(CAT "블루", Lv.1) 자동 지급
         5. 약관 동의 이력 영속화
         """
-        from datetime import date
 
         from app.core.exceptions import (
             EmailAlreadyExistsException,
@@ -172,6 +172,7 @@ class MemberService:
         )
         from app.core.security import hash_password
         from app.models.terms import Terms
+        from app.services.email_service import EmailService
 
         # 1. 필수 약관 동의 검증
         if not req.agree_terms or not req.agree_privacy:
@@ -188,10 +189,9 @@ class MemberService:
         )
         res = await db.execute(stmt)
         existing_member = res.scalars().first()
-        if existing_member:
+        if existing_member and existing_member.status == "ACTIVE":
             raise EmailAlreadyExistsException("이미 사용 중인 이메일입니다.")
 
-        # 3. 신규 회원 생성
         nickname = (
             req.nickname.strip()
             if req.nickname and req.nickname.strip()
@@ -204,60 +204,87 @@ class MemberService:
             except ValueError:
                 parsed_birth_date = None
 
-        new_member_id = uuid.uuid4()
         pw_hashed = hash_password(req.password)
 
-        new_member = Member(
-            member_id=new_member_id,
-            email=clean_email,
-            nickname=nickname,
-            password_hash=pw_hashed,
-            birth_date=parsed_birth_date,
-            gender=req.gender.strip() if req.gender else None,
-            profile_image_url=None,
-            status="ACTIVE",
-            provider="LOCAL",
-            provider_id=clean_email,
-        )
-        db.add(new_member)
-        await db.flush()
+        if existing_member and existing_member.status == "PENDING_VERIFICATION":
+            # 이전에 가입을 시도했으나 인증을 마치지 않은 경우 정보 갱신
+            existing_member.nickname = nickname
+            existing_member.password_hash = pw_hashed
+            existing_member.birth_date = parsed_birth_date
+            existing_member.gender = req.gender.strip() if req.gender else None
+            member = existing_member
+        else:
+            # 3. 신규 회원 생성 (인증 대기 상태)
+            new_member_id = uuid.uuid4()
+            new_member = Member(
+                member_id=new_member_id,
+                email=clean_email,
+                nickname=nickname,
+                password_hash=pw_hashed,
+                birth_date=parsed_birth_date,
+                gender=req.gender.strip() if req.gender else None,
+                profile_image_url=None,
+                status="PENDING_VERIFICATION",
+                provider="LOCAL",
+                provider_id=clean_email,
+            )
+            db.add(new_member)
+            await db.flush()
 
-        # 4. 기본 책장 자동 생성 보장
-        await ShelfService.get_or_create_default_shelf(db, new_member_id)
+            # 4. 기본 책장 자동 생성 보장
+            await ShelfService.get_or_create_default_shelf(db, new_member_id)
 
-        # 5. 기본 대표 사서(CAT "블루", Lv.1) 자동 지급 보장
-        await MemberService._ensure_default_cat_librarian(db, new_member_id)
+            # 5. 기본 대표 사서(CAT "블루", Lv.1) 자동 지급 보장
+            await MemberService._ensure_default_cat_librarian(db, new_member_id)
 
-        # 6. 약관 동의 이력 저장
-        # 활성 약관 목록 조회
-        terms_stmt = select(Terms).where(
-            Terms.expired_at.is_(None),
-            Terms.deleted_at.is_(None),
-        )
-        terms_res = await db.execute(terms_stmt)
-        active_terms = terms_res.scalars().all()
+            # 6. 약관 동의 이력 저장
+            terms_stmt = select(Terms).where(
+                Terms.expired_at.is_(None),
+                Terms.deleted_at.is_(None),
+            )
+            terms_res = await db.execute(terms_stmt)
+            active_terms = terms_res.scalars().all()
 
-        agreed_codes = set()
-        if req.agree_terms:
-            agreed_codes.add("TERMS_OF_SERVICE")
-        if req.agree_privacy:
-            agreed_codes.add("PRIVACY")
-        if req.agree_ai_analysis:
-            agreed_codes.add("AI_ANALYSIS")
+            agreed_codes = set()
+            if req.agree_terms:
+                agreed_codes.add("TERMS_OF_SERVICE")
+            if req.agree_privacy:
+                agreed_codes.add("PRIVACY")
+            if req.agree_ai_analysis:
+                agreed_codes.add("AI_ANALYSIS")
 
-        for term in active_terms:
-            if term.code in agreed_codes:
-                db.add(
-                    MemberAgreement(
-                        member_id=new_member_id,
-                        terms_id=term.id,
-                        action="AGREE",
+            for term in active_terms:
+                if term.code in agreed_codes:
+                    db.add(
+                        MemberAgreement(
+                            member_id=new_member_id,
+                            terms_id=term.id,
+                            action="AGREE",
+                        )
                     )
-                )
+            member = new_member
+
+        # 7. 6자리 인증 코드 생성 및 영속화
+        code = EmailService.generate_verification_code()
+        expires_at = datetime.now(UTC) + timedelta(
+            minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES
+        )
+        db.add(
+            EmailVerification(
+                email=clean_email,
+                code=code,
+                expires_at=expires_at,
+                is_verified=False,
+            )
+        )
 
         await db.commit()
-        await db.refresh(new_member)
-        return new_member
+        await db.refresh(member)
+
+        # 8. 인증 이메일 비동기 발송
+        await EmailService.send_verification_email(clean_email, code)
+
+        return member
 
     @staticmethod
     async def ensure_demo_member(db: AsyncSession) -> Member:

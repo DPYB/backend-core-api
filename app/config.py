@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     NL_API_CERT_KEY: str | None = None
     AI_AGENT_BASE_URL: str | None = None
 
+    # Email / SMTP (Gmail)
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_NAME: str = "도서관 사서단"
+    EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 5
+
     # App General
     ENV: str = "local"
     PORT: int = 8000

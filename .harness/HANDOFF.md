@@ -1,6 +1,28 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-09-28: Gmail SMTP 실시간 이메일 인증 시스템 구축 & Cloud Run 사전 점검
+- **배경**:
+  - 회원가입 후 실제 이메일 인증 코드가 발송되지 않아 사용자들이 인증 번호를 받지 못하던 문제 해결 및 타인 이메일 도용/스팸 봇 방어 체계 완비.
+  - Render 무료 인스턴스에서 Google Cloud Run으로의 마이그레이션 사전 준비.
+- **구현 내용**:
+  1. **Gmail SMTP 비동기 발송 연동 (`EmailService`)**:
+     - `aiosmtplib`를 활용하여 `smtp.gmail.com:587` TLS 기반 실시간 이메일 발송 서비스 구현.
+     - 도서관 사서단 테마의 반응형 HTML 카드 템플릿(서비스 로고, 6자리 인증 코드, 5분 유효시간 안내) 적용.
+     - 실제 SMTP 계정(`dpyb26@gmail.com`) 발송 연결 검증 성공.
+  2. **스키마 및 Alembic 마이그레이션 (`009_add_email_verifications.py`)**:
+     - `member.email_verifications` 테이블 생성 (`id`, `email`, `code`, `expires_at`, `is_verified`, `created_at`).
+     - `app/models/member.py`에 `EmailVerification` ORM 모델 매핑.
+  3. **회원가입 및 인증 라이프사이클 완성 (`MemberService`, `app/routers/auth.py`)**:
+     - `POST /api/v1/auth/signup`: 신규 회원 생성 시 `status="PENDING_VERIFICATION"`으로 등록, 6자리 난수 코드 발급 및 Gmail 발송.
+     - `POST /api/v1/auth/signup/confirm`: 5분 유효시간 및 실제 코드 대조 후 일치 시 `is_verified=True`, `member.status="ACTIVE"`로 전이.
+     - `POST /api/v1/auth/signup/resend`: 재발송 요청 시 30초 쿨다운 Rate Limit 적용 후 새 코드 발급/발송.
+     - `POST /api/v1/auth/login`: 미인증 회원 로그인 시도 시 `403 EMAIL_NOT_VERIFIED` 반환 (프론트엔드 `LoginPage.jsx`가 즉시 인증 화면으로 전환하도록 계약 일치).
+  4. **테스트 및 코드 무결성 검증**:
+     - `tests/test_signup.py` 갱신 (가입 ➔ 미인증 로그인 차단 ➔ 오입력 400 ➔ 정답 입력 200 ➔ 로그인 성공 플로우 전수 검증).
+     - 전체 112개 단위/통합 테스트 100% 통과 (12.69s) 및 `ruff check .` 0 에러 무결점 검증.
+
 ## 2026-09-22: 크로스 도메인 환경 SameSite=None 및 Secure 쿠키 설정 적용
+
 - **배경**: 프론트엔드(`https://ai0208.xyz`)에서 백엔드(`https://backend-core-api.onrender.com`)로 토큰 갱신(`POST /api/v1/auth/refresh`) 요청 시 `401 Unauthorized` 발생 확인.
 - **원인 분석**:
   1. `app/routers/auth.py`의 `_set_refresh_cookie`가 `samesite="lax"`로 설정되어 있어 Cross-Site 간 POST 요청 시 브라우저가 보안 정책상 `Cookie` 헤더를 제외하고 전송함.

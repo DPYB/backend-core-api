@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from sqlalchemy import select
@@ -13,9 +14,10 @@ from app.core.security import (
     create_refresh_token,
     decode_refresh_token,
     get_authenticated_member_id,
+    verify_password,
 )
 from app.db.session import get_db
-from app.models.member import Member
+from app.models.member import EmailVerification, Member
 from app.schemas.auth import (
     AvailabilityRequest,
     AvailabilityResponse,
@@ -33,6 +35,7 @@ from app.schemas.auth import (
     SocialLoginRequest,
     TokenResponse,
 )
+from app.services.email_service import EmailService
 from app.services.member_service import MemberService
 from app.services.social_auth_service import SocialAuthService
 
@@ -143,15 +146,17 @@ async def signup_member(
 @router.post(
     "/signup/confirm",
     status_code=status.HTTP_200_OK,
-    summary="회원가입 인증 확인 (이메일 인증 단계 호환)",
+    summary="회원가입 인증 확인 (이메일 인증 단계)",
 )
 async def confirm_signup(
     req: ConfirmSignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    프론트엔드 이메일 인증(EmailVerification) 단계 호환 엔드포인트:
-    현재 이메일 발송 인프라 없이 즉시 가입 완료되므로, 회원이 존재하는지 확인 후 200 OK를 반환합니다.
+    프론트엔드 이메일 인증(EmailVerification) 확인 엔드포인트:
+    - 회원 존재 여부 검증
+    - 최신 미인증 인증 코드 검증 (유효시간 및 일치 확인)
+    - 회원 status를 ACTIVE로 변경
     """
     clean_email = req.email.strip().lower()
     stmt = select(Member).where(
@@ -162,6 +167,50 @@ async def confirm_signup(
     member = res.scalars().first()
     if not member:
         raise AppException(404, "MEMBER_NOT_FOUND", "가입되지 않은 이메일입니다.")
+
+    if member.status == "ACTIVE":
+        return {"message": "이메일 인증이 완료되었습니다.", "status": "ACTIVE"}
+
+    # 최신 미인증 코드 조회
+    stmt_v = (
+        select(EmailVerification)
+        .where(
+            EmailVerification.email == clean_email,
+            EmailVerification.is_verified.is_(False),
+        )
+        .order_by(EmailVerification.id.desc())
+    )
+    res_v = await db.execute(stmt_v)
+    verification = res_v.scalars().first()
+
+    if not verification:
+        raise AppException(
+            400,
+            "INVALID_VERIFICATION_CODE",
+            "인증 코드가 존재하지 않거나 만료되었습니다.",
+        )
+
+    now = datetime.now(UTC)
+    expires_at = (
+        verification.expires_at
+        if verification.expires_at.tzinfo is not None
+        else verification.expires_at.replace(tzinfo=UTC)
+    )
+    if expires_at < now:
+        raise AppException(
+            400,
+            "VERIFICATION_CODE_EXPIRED",
+            "인증 코드가 만료되었습니다. 인증 코드를 다시 요청해 주세요.",
+        )
+
+    if verification.code.strip() != req.code.strip():
+        raise AppException(
+            400, "INVALID_VERIFICATION_CODE", "인증 코드가 올바르지 않습니다."
+        )
+
+    verification.is_verified = True
+    member.status = "ACTIVE"
+    await db.commit()
 
     return {"message": "이메일 인증이 완료되었습니다.", "status": "ACTIVE"}
 
@@ -169,14 +218,17 @@ async def confirm_signup(
 @router.post(
     "/signup/resend",
     status_code=status.HTTP_200_OK,
-    summary="회원가입 인증코드 재전송 호환",
+    summary="회원가입 인증코드 재전송",
 )
 async def resend_signup_code(
     req: ResendSignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
-    프론트엔드 인증코드 재전송 호환 엔드포인트 (200 OK 반환).
+    회원가입 인증코드 재전송:
+    - 회원 존재 여부 검증
+    - 30초 내 재발송 쿨다운 확인
+    - 새 6자리 난수 코드 발급 및 Gmail SMTP 재발송
     """
     clean_email = req.email.strip().lower()
     stmt = select(Member).where(
@@ -188,6 +240,44 @@ async def resend_signup_code(
     if not member:
         raise AppException(404, "MEMBER_NOT_FOUND", "가입되지 않은 이메일입니다.")
 
+    if member.status == "ACTIVE":
+        return {"message": "이미 이메일 인증이 완료된 계정입니다."}
+
+    # 최근 발송 30초 쿨다운
+    stmt_v = (
+        select(EmailVerification)
+        .where(EmailVerification.email == clean_email)
+        .order_by(EmailVerification.id.desc())
+    )
+    res_v = await db.execute(stmt_v)
+    latest_v = res_v.scalars().first()
+    now = datetime.now(UTC)
+    if latest_v:
+        created_at = (
+            latest_v.created_at
+            if latest_v.created_at.tzinfo is not None
+            else latest_v.created_at.replace(tzinfo=UTC)
+        )
+        if (now - created_at).total_seconds() < 30:
+            raise AppException(
+                429,
+                "RATE_LIMIT_EXCEEDED",
+                "인증 코드가 이미 발송되었습니다. 30초 후 다시 시도해 주세요.",
+            )
+
+    code = EmailService.generate_verification_code()
+    expires_at = now + timedelta(minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES)
+    db.add(
+        EmailVerification(
+            email=clean_email,
+            code=code,
+            expires_at=expires_at,
+            is_verified=False,
+        )
+    )
+    await db.commit()
+
+    await EmailService.send_verification_email(clean_email, code)
     return {"message": "인증 코드가 재전송되었습니다."}
 
 
@@ -204,11 +294,36 @@ async def dev_login(
 ) -> LoginResponse:
     """
     프론트엔드 로그인 화면 및 로컬 개발용 엔드포인트입니다.
-    이메일로 회원을 조회하거나 신규 테스트 계정을 자동 생성(Get-or-Create)하고,
-    기본 책장과 기본 대표 고양이 사서(CAT)를 자동 지급합니다.
-    자체 Bearer JWT 및 HttpOnly 세션 쿠키를 동시에 발급합니다.
+    - 미인증 회원(PENDING_VERIFICATION)의 경우 403 EMAIL_NOT_VERIFIED 반환
+    - 비밀번호 등록 회원의 경우 비밀번호 검증 (불일치 시 401)
+    - 자체 Bearer JWT 및 HttpOnly 세션 쿠키 발급
     """
-    member, is_new = await MemberService.get_or_create_dev_member(db, req.email)
+    clean_email = req.email.strip().lower()
+    stmt = select(Member).where(
+        Member.email == clean_email,
+        Member.deleted_at.is_(None),
+    )
+    res = await db.execute(stmt)
+    existing_member = res.scalars().first()
+
+    if existing_member:
+        if existing_member.status == "PENDING_VERIFICATION":
+            raise AppException(
+                403,
+                "EMAIL_NOT_VERIFIED",
+                "이메일 인증이 완료되지 않았습니다. 메일함의 인증 코드를 확인해 주세요.",
+            )
+        if existing_member.password_hash and req.password:
+            if not verify_password(req.password, existing_member.password_hash):
+                raise AppException(
+                    401,
+                    "INVALID_CREDENTIALS",
+                    "이메일 또는 비밀번호가 올바르지 않습니다.",
+                )
+        member = existing_member
+        is_new = False
+    else:
+        member, is_new = await MemberService.get_or_create_dev_member(db, req.email)
 
     access_token = create_access_token(member.member_id, member.email, member.nickname)
     refresh_token = create_refresh_token(member.member_id)
