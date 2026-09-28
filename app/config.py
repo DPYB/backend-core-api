@@ -52,7 +52,6 @@ class Settings(BaseSettings):
     SMTP_FROM_NAME: str = "도서관 사서단"
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 5
 
-
     # App General
     ENV: str = "local"
     PORT: int = 8000

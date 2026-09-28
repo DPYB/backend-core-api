@@ -52,7 +52,6 @@ def mock_send_email():
 
 @pytest.mark.asyncio
 async def test_signup_success(client: AsyncClient, db_session: AsyncSession):
-
     """정상 회원가입 및 기본 책장/고양이 사서/약관동의 자동 생성 검증"""
     payload = {
         "email": "signup_user@example.com",
@@ -180,7 +179,9 @@ async def test_confirm_signup_and_resend(client: AsyncClient, db_session: AsyncS
     assert signup_resp.status_code == 201
 
     # 2. DB에서 발급된 6자리 인증 코드 확인
-    v_stmt = select(EmailVerification).where(EmailVerification.email == "verify_test@example.com")
+    v_stmt = select(EmailVerification).where(
+        EmailVerification.email == "verify_test@example.com"
+    )
     v_record = (await db_session.execute(v_stmt)).scalars().first()
     assert v_record is not None
     assert len(v_record.code) == 6
@@ -231,4 +232,3 @@ async def test_confirm_signup_and_resend(client: AsyncClient, db_session: AsyncS
         json={"email": "nonexistent@example.com", "code": "123456"},
     )
     assert not_found_resp.status_code == 404
-

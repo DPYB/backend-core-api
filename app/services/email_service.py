@@ -112,7 +112,9 @@ class EmailService:
                 start_tls=True,
                 timeout=15.0,
             )
-            logger.info("[EmailService] Verification email successfully sent to %s", to_email)
+            logger.info(
+                "[EmailService] Verification email successfully sent to %s", to_email
+            )
         except Exception as e:
             logger.error("[EmailService] Failed to send email to %s: %s", to_email, e)
             raise AppException(

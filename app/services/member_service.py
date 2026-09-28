@@ -286,7 +286,6 @@ class MemberService:
 
         return member
 
-
     @staticmethod
     async def ensure_demo_member(db: AsyncSession) -> Member:
         """

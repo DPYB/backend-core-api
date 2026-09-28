@@ -185,7 +185,9 @@ async def confirm_signup(
 
     if not verification:
         raise AppException(
-            400, "INVALID_VERIFICATION_CODE", "인증 코드가 존재하지 않거나 만료되었습니다."
+            400,
+            "INVALID_VERIFICATION_CODE",
+            "인증 코드가 존재하지 않거나 만료되었습니다.",
         )
 
     now = datetime.now(UTC)
@@ -196,7 +198,9 @@ async def confirm_signup(
     )
     if expires_at < now:
         raise AppException(
-            400, "VERIFICATION_CODE_EXPIRED", "인증 코드가 만료되었습니다. 인증 코드를 다시 요청해 주세요."
+            400,
+            "VERIFICATION_CODE_EXPIRED",
+            "인증 코드가 만료되었습니다. 인증 코드를 다시 요청해 주세요.",
         )
 
     if verification.code.strip() != req.code.strip():
@@ -261,7 +265,6 @@ async def resend_signup_code(
                 "인증 코드가 이미 발송되었습니다. 30초 후 다시 시도해 주세요.",
             )
 
-
     code = EmailService.generate_verification_code()
     expires_at = now + timedelta(minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES)
     db.add(
@@ -313,7 +316,9 @@ async def dev_login(
         if existing_member.password_hash and req.password:
             if not verify_password(req.password, existing_member.password_hash):
                 raise AppException(
-                    401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 올바르지 않습니다."
+                    401,
+                    "INVALID_CREDENTIALS",
+                    "이메일 또는 비밀번호가 올바르지 않습니다.",
                 )
         member = existing_member
         is_new = False
@@ -335,7 +340,6 @@ async def dev_login(
         is_new_member=is_new,
         member=profile,
     )
-
 
 
 @router.post(
