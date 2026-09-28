@@ -53,3 +53,5 @@ logs/
 
 # Local Ops Docs
 docs/
+.agents/
+

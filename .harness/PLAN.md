@@ -30,3 +30,44 @@
 - [ ] `backend-ai-agent`: Gemini 전역 호출 상한 및 429 서킷브레이커/안내 문구 폴백 확인
 - [ ] 발표/심사 당일용 독립 비공개 계정 사전 확보
 
+---
+
+## [Feature] Google Cloud Run 배포 마이그레이션 & Gmail SMTP 이메일 인증 연동
+
+### 배경 및 목적
+1. **Google Cloud Run 마이그레이션**: Render 무료 인스턴스의 슬립/콜드스타트 한계를 극복하고, Google Cloud 인프라(Cloud Run 월 200만 건 무료 요청 티어)로 전환하여 안정적인 $0 고성능 운영 환경 구축.
+2. **Gmail SMTP 이메일 인증 연동**: 회원가입 시 실제 실존하는 이메일인지 검증하여 타인 도용 및 가짜 계정 생성을 원천 차단하고, 6자리 인증 코드 발송/검증 프로세스를 완성.
+
+### 세부 설계
+
+#### 1. Gmail SMTP 인증 메일 발송 시스템
+- **의존성 & 환경설정**: `aiosmtplib` 비동기 라이브러리 추가, `app/config.py`에 SMTP 설정(`SMTP_HOST="smtp.gmail.com"`, `SMTP_PORT=587`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM_NAME="DontPawGet 사서단"`) 추가.
+- **인증 데이터 영속화**:
+  - `member.email_verifications` 테이블 생성 (Alembic 마이그레이션): `email`, `code`, `expires_at`(발급 후 5분), `is_verified`, `created_at`.
+  - 또는 `member.members`에 `is_verified BOOLEAN DEFAULT FALSE` 컬럼 추가.
+- **비즈니스 로직**:
+  - `EmailService`: HTML 템플릿(예쁜 서비스 로고와 사서 디자인의 6자리 인증 코드 메일) 기반 비동기 발송 로직 구현.
+  - `POST /api/v1/auth/signup`: 회원 등록 및 6자리 난수 코드 생성 후 Gmail SMTP 백그라운드 태스크 발송 (미인증 상태).
+  - `POST /api/v1/auth/signup/confirm`: 실제 코드 일치 및 5분 유효시간 검증 ➔ 통과 시 `is_verified=True` 승인.
+  - `POST /api/v1/auth/signup/resend`: 재발송 요청 시 기존 미인증 코드 갱신 및 재발송 (Rate Limit 분당 1회 방어).
+  - `POST /api/v1/auth/login`: `is_verified`가 False인 경우 `403 EMAIL_NOT_VERIFIED` 반환하여 인증 강제.
+
+#### 2. Google Cloud Run 마이그레이션 구성
+- **Dockerfile 점검**: 이미 `${PORT:-8000}` 동적 바인딩 및 슬림 2단계 빌드가 완비되어 있어 Cloud Run 즉시 호환.
+- **배포 가이드 & 스크립트 작성**:
+  - Google Cloud CLI(`gcloud run deploy`) 명령 및 환경변수 주입 스펙 문서화.
+  - GitHub Actions를 통한 Cloud Run 자동 배포 워크플로우 구성 방안 제시.
+- **CORS 및 DNS 도메인 연동**:
+  - Cloud Run 생성 URL 또는 커스텀 도메인에 대한 프론트엔드 연동 및 Cloudflare CDN 설정 가이드.
+
+### 체크리스트
+- [x] Task 1: `aiosmtplib` 의존성 추가 및 `app/config.py`에 Gmail SMTP 환경변수 정의
+- [x] Task 2: Alembic 마이그레이션 작성 (`009_add_email_verifications.py` 및 `EmailVerification` 모델)
+- [x] Task 3: `EmailService` 구현 (사서 컨셉 HTML 인증 메일 템플릿 및 Gmail SMTP 비동기 전송)
+- [x] Task 4: `MemberService` & `auth.py` 회원가입/인증/재발송/로그인 플로우에 실제 이메일 인증 연동
+- [x] Task 5: 단위 및 통합 테스트 갱신 (`test_signup.py`, 112개 테스트 100% 통과)
+- [x] Task 6: 환경변수 템플릿(`.env.example`)에 Gmail SMTP 항목 반영
+- [ ] Task 7: Google Cloud Run 배포 마이그레이션 가이드 및 워크플로우 구성
+
+
+
