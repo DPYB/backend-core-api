@@ -5,8 +5,20 @@ import pytest
 from httpx import AsyncClient
 
 
+@pytest.fixture(autouse=True)
+def mock_ai_vectorization():
+    """AI 벡터화 외부 HTTP 통신 자동 차단 (0ms 대기 보장)"""
+    with patch(
+        "app.services.record_service.RecordService.trigger_ai_vectorization",
+        new=AsyncMock(),
+    ) as m:
+        yield m
+
+
 @pytest.mark.asyncio
-async def test_create_get_and_delete_records(client: AsyncClient):
+async def test_create_get_and_delete_records(
+    client: AsyncClient, mock_ai_vectorization: AsyncMock
+):
     member_id = uuid.uuid4()
     headers = {"Authorization": f"Bearer mock-token-{member_id}"}
 
@@ -26,23 +38,17 @@ async def test_create_get_and_delete_records(client: AsyncClient):
         ],
     }
 
-    with patch(
-        "app.services.record_service.RecordService.trigger_ai_vectorization",
-        new=AsyncMock(),
-    ) as mock_trigger:
-        # 1. 독서 기록 생성 (POST)
-        response = await client.post("/api/v1/records", json=payload, headers=headers)
-        assert response.status_code == 201
-        data = response.json()
-        assert data["member_id"] == str(member_id)
-        assert data["title"] == "클린 코드 독서 기록"
-        assert len(data["scraps"]) == 1
-        assert data["scraps"][0]["sentence"].startswith("보이스카우트")
-        assert (
-            data["scraps"][0]["scrap_image_url"] == "https://example.com/scraps/1.jpg"
-        )
+    # 1. 독서 기록 생성 (POST)
+    response = await client.post("/api/v1/records", json=payload, headers=headers)
+    assert response.status_code == 201
+    data = response.json()
+    assert data["member_id"] == str(member_id)
+    assert data["title"] == "클린 코드 독서 기록"
+    assert len(data["scraps"]) == 1
+    assert data["scraps"][0]["sentence"].startswith("보이스카우트")
+    assert data["scraps"][0]["scrap_image_url"] == "https://example.com/scraps/1.jpg"
 
-        mock_trigger.assert_awaited_once()
+    mock_ai_vectorization.assert_awaited_once()
 
     record_id = data["id"]
 

@@ -52,7 +52,21 @@
   - 동적 `$PORT` 환경변수 바인딩 (`Dockerfile`).
   - `/health` 엔드포인트에서 Supabase `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지.
   - 중앙 `DPYB/.github` 워크플로우에서 10분 주기로 서비스 전체를 일괄 핑하는 중앙 킵얼라이브 연동 (개별 `keep-alive.yml` 크론 불필요).
-- **AI 자가 검증 필수**: 코드 수정 직후 반드시 `ruff check --fix .` 및 `pytest`를 터미널에서 실행하고, 에러나 경고가 0개가 될 때까지 스스로 터미널 로그를 보고 코드를 고칠 것.
+- **AI 자가 검증 (계층형 3단계 검증 워크플로우 - 3-Tier Verification)**:
+  - **Tier 1 (작업 중 - 초고속 피드백)**:
+    - `uv run ruff check .` 및 `uv run ruff format .` (0.2초대 빠른 포맷/린트 검사 및 자동 정렬)
+    - 변경된 파일 관련 타깃 단위 테스트만 집중 실행 (예: `uv run pytest tests/test_<module>.py`)
+  - **Tier 2 (커밋 & PR 직전 1회 - 로컬 안정성 검사)**:
+    - `uv run ruff format --check .` 및 `uv run ruff check .` (원격 CI 포맷/린트 100% 통과 보장)
+    - `uv run mypy .` (정적 타입 체크 무결점 검증)
+    - `uv run pytest -m "not integration" -x` (무거운 통합 테스트 제외, 첫 실패 시 즉시 멈춰 빠른 수정)
+  - **Tier 3 (원격 CI - 안전망)**:
+    - PR 생성 및 푸시 시 GitHub Actions 러너가 전체 회귀(통합 테스트 포함 전수 검사)를 수행하며, Required Check가 develop 머지를 최종 보호함.
+- **외부 네트워크 I/O 차단 (Mocking 원칙)**:
+  - 단위 테스트에서 외부 HTTP/네트워크 통신(카카오 OAuth, 국립중앙도서관/알라딘 도서 검색, 외부 알림, Supabase Storage 등)이 발생하는 지점은 `unittest.mock`으로 가짜 응답을 주입하여 대기 시간을 0ms로 차단함.
+  - 실제 외부 서버/DB를 직접 호출하는 무거운 테스트는 `@pytest.mark.integration` 마커를 부착하여 기본 단위 테스트 스위트에서 분리함.
+- **중앙 PR 린터 개행 완화 지원**:
+  - DPYB 중앙 레포(`DPYB/.github`)의 PR 린터가 업데이트되어, PR 본문의 `- **목적**:` 및 `- **주요 변경사항**:` 뒤에 다음 줄 개행(`\n`) 후 내용을 작성해도 정상 통과됨.
 
 ## 5. 브랜치 & 커밋 컨벤션
 [DPYB `.github` 레포의 02-git-conventions.md](https://github.com/DPYB/.github/blob/main/docs/02-git-conventions.md)를 따르며, 아래 불변식을 강제한다:
