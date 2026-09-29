@@ -54,9 +54,7 @@ class Librarian(Base):
     id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
     member_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), nullable=False)
     type: Mapped[LibrarianType] = mapped_column(
-        SAEnum(
-            LibrarianType, name="librarian_type", schema="core", inherit_schema=True
-        ),
+        SAEnum(LibrarianType, name="librarian_type", schema="core"),
         ForeignKey("core.librarian_type_info.type"),
         nullable=False,
     )

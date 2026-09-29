@@ -60,7 +60,7 @@ class LibraryBook(Base):
     author: Mapped[str] = mapped_column(String(100), nullable=False)
     isbn: Mapped[str | None] = mapped_column(String(13), nullable=True)
     genre: Mapped[GenreType] = mapped_column(
-        SAEnum(GenreType, name="genre_type", schema="core", inherit_schema=True),
+        SAEnum(GenreType, name="genre_type", schema="core"),
         default=GenreType.NONE,
         nullable=False,
     )
@@ -74,7 +74,6 @@ class LibraryBook(Base):
             BookReadingStatus,
             name="book_reading_status",
             schema="core",
-            inherit_schema=True,
         ),
         default=BookReadingStatus.PLANNED,
         nullable=False,

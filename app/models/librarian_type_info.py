@@ -13,9 +13,7 @@ class LibrarianTypeInfo(Base):
     __table_args__ = {"schema": "core"}
 
     type: Mapped[LibrarianType] = mapped_column(
-        SAEnum(
-            LibrarianType, name="librarian_type", schema="core", inherit_schema=True
-        ),
+        SAEnum(LibrarianType, name="librarian_type", schema="core"),
         primary_key=True,
     )
     image_url: Mapped[str] = mapped_column(Text, nullable=False)

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
-    SMTP_FROM_NAME: str = "도서관 사서단"
+    SMTP_FROM_NAME: str = "DPYB 팀"
     EMAIL_VERIFICATION_EXPIRE_MINUTES: int = 5
 
     # App General

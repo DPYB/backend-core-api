@@ -37,7 +37,7 @@ class EmailService:
 
         # 텍스트 본문 (HTML 미지원 클라이언트용)
         text_content = (
-            f"안녕하세요, Don't Paw-get Your Book(도서관 사서단)입니다.\n\n"
+            f"안녕하세요, DPYB(Don't Paw-get Your Book) 팀입니다.\n\n"
             f"회원가입을 완료하기 위해 아래 6자리 인증 번호를 입력해 주세요:\n"
             f"인증 번호: {code}\n\n"
             f"해당 번호는 {settings.EMAIL_VERIFICATION_EXPIRE_MINUTES}분 동안 유효합니다.\n"
@@ -61,15 +61,15 @@ class EmailService:
           <!-- Header -->
           <tr>
             <td style="padding: 32px 32px 20px 32px; text-align: center; border-bottom: 1px solid #f0f2f5;">
-              <h2 style="margin: 0 0 8px 0; color: #1e293b; font-size: 20px; font-weight: 700;">🐾 Don't Paw-get Your Book</h2>
-              <p style="margin: 0; color: #64748b; font-size: 14px;">도서관 사서단 회원가입 이메일 인증</p>
+              <h2 style="margin: 0 0 8px 0; color: #1e293b; font-size: 20px; font-weight: 700;">🐾 DPYB (Don't Paw-get Your Book)</h2>
+              <p style="margin: 0; color: #64748b; font-size: 14px;">DPYB 팀 회원가입 이메일 인증</p>
             </td>
           </tr>
           <!-- Body -->
           <tr>
             <td style="padding: 32px;">
               <p style="margin: 0 0 16px 0; color: #334155; font-size: 15px; line-height: 1.6;">
-                안녕하세요! <strong>Don't Paw-get Your Book</strong>에 오신 것을 환영합니다.<br>
+                안녕하세요! <strong>DPYB 팀</strong>에 오신 것을 환영합니다.<br>
                 회원가입 화면에서 아래 <strong>6자리 인증 번호</strong>를 입력해 주세요.
               </p>
               
@@ -90,7 +90,7 @@ class EmailService:
           <tr>
             <td style="padding: 20px 32px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f0f2f5;">
               <p style="margin: 0; color: #94a3b8; font-size: 12px;">
-                © 2026 Don't Paw-get Your Book. All rights reserved.
+                © 2026 DPYB Team. All rights reserved.
               </p>
             </td>
           </tr>

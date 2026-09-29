@@ -1,5 +1,18 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-09-29: Cloud Run 기동 에러(SAEnum inherit_schema) 해결 및 DPYB 팀 브랜딩 반영
+- **배경**:
+  - Google Cloud Run 배포 기동 시 `sqlalchemy.exc.ArgumentError: Ambiguously setting inherit_schema=True while also passing a schema argument` 에러로 컨테이너가 exit(1) 크래시되며 8000 포트 타임아웃 발생.
+  - 이메일 인증 안내 발신자 및 메일 템플릿 문구를 프로젝트 공식 브랜드인 `DPYB 팀`으로 일원화 요청.
+- **수정 내용**:
+  1. **SAEnum `inherit_schema=True` 중복 충돌 제거**:
+     - `app/models/librarian_type_info.py`, `app/models/librarian.py`, `app/models/library_book.py`에서 `schema="core"`가 명시된 `SAEnum` 정의부의 `inherit_schema=True` 인자 제거하여 최신 SQLAlchemy 2.0 스키마 충돌 해결.
+  2. **이메일 인증 브랜딩 및 템플릿 개편**:
+     - `app/config.py`, `.env.example`: `SMTP_FROM_NAME` 기본값을 `"도서관 사서단"` ➔ `"DPYB 팀"`으로 변경.
+     - `app/services/email_service.py`: 텍스트 및 HTML 카드 템플릿을 `DPYB 팀` 스타일(헤더 `🐾 DPYB (Don't Paw-get Your Book)`, 환영 문구, 푸터)로 세련되게 개편.
+  3. **품질 검증**:
+     - `app.models` 정상 임포트 검증, `ruff check .` 0 에러, 전체 112개 단위/통합 테스트 100% 통과 (20.49s).
+
 ## 2026-09-28: Gmail SMTP 실시간 이메일 인증 시스템 구축 & Cloud Run 사전 점검
 - **배경**:
   - 회원가입 후 실제 이메일 인증 코드가 발송되지 않아 사용자들이 인증 번호를 받지 못하던 문제 해결 및 타인 이메일 도용/스팸 봇 방어 체계 완비.
