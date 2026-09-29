@@ -16,7 +16,9 @@ def mock_ai_vectorization():
 
 
 @pytest.mark.asyncio
-async def test_create_get_and_delete_records(client: AsyncClient, mock_ai_vectorization: AsyncMock):
+async def test_create_get_and_delete_records(
+    client: AsyncClient, mock_ai_vectorization: AsyncMock
+):
     member_id = uuid.uuid4()
     headers = {"Authorization": f"Bearer mock-token-{member_id}"}
 
@@ -44,9 +46,7 @@ async def test_create_get_and_delete_records(client: AsyncClient, mock_ai_vector
     assert data["title"] == "클린 코드 독서 기록"
     assert len(data["scraps"]) == 1
     assert data["scraps"][0]["sentence"].startswith("보이스카우트")
-    assert (
-        data["scraps"][0]["scrap_image_url"] == "https://example.com/scraps/1.jpg"
-    )
+    assert data["scraps"][0]["scrap_image_url"] == "https://example.com/scraps/1.jpg"
 
     mock_ai_vectorization.assert_awaited_once()
 

@@ -54,9 +54,10 @@
   - 중앙 `DPYB/.github` 워크플로우에서 10분 주기로 서비스 전체를 일괄 핑하는 중앙 킵얼라이브 연동 (개별 `keep-alive.yml` 크론 불필요).
 - **AI 자가 검증 (계층형 3단계 검증 워크플로우 - 3-Tier Verification)**:
   - **Tier 1 (작업 중 - 초고속 피드백)**:
-    - `uv run ruff check .` (0.2초대 빠른 포맷/린트 검사)
+    - `uv run ruff check .` 및 `uv run ruff format .` (0.2초대 빠른 포맷/린트 검사 및 자동 정렬)
     - 변경된 파일 관련 타깃 단위 테스트만 집중 실행 (예: `uv run pytest tests/test_<module>.py`)
   - **Tier 2 (커밋 & PR 직전 1회 - 로컬 안정성 검사)**:
+    - `uv run ruff format --check .` 및 `uv run ruff check .` (원격 CI 포맷/린트 100% 통과 보장)
     - `uv run mypy .` (정적 타입 체크 무결점 검증)
     - `uv run pytest -m "not integration" -x` (무거운 통합 테스트 제외, 첫 실패 시 즉시 멈춰 빠른 수정)
   - **Tier 3 (원격 CI - 안전망)**:
