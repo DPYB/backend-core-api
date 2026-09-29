@@ -31,13 +31,16 @@ dev = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-ra -q --import-mode=importlib"
+addopts = "-q --tb=short --import-mode=importlib"
 asyncio_mode = "auto"
 testpaths = [
     "tests",
 ]
 pythonpath = [
     "."
+]
+markers = [
+    "integration: 실제 DB나 외부 네트워크 API를 직접 호출하는 무거운 통합 테스트"
 ]
 
 [tool.ruff]

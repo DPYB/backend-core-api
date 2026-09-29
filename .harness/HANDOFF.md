@@ -1,5 +1,23 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-09-29: 단위 테스트 고속화 & 계층형 3단계 검증(3-Tier Verification) 적용
+- **배경**:
+  - `backend-ai-agent`에서 테스트 실행 시간을 84초 ➔ 9~13초대로 단축시킨 접근 방식을 `backend-core-api`에도 적용하여 개발 및 PR 검증 생산성 극대화.
+- **적용 내용**:
+  1. **`pyproject.toml` 테스트 옵션 및 마커 최적화**:
+     - `addopts = "-q --tb=short --import-mode=importlib"`로 전역 터미널 토큰 절약 및 가독성 최적화.
+     - `markers = ["integration: 실제 DB나 외부 네트워크 API를 직접 호출하는 무거운 통합 테스트"]` 등록.
+  2. **`AGENTS.md` 계층형 3단계 검증 워크플로우 명문화**:
+     - **Tier 1 (작업 중)**: `uv run ruff check .` (0.2초대 피드백) + 타깃 단위 테스트 실행.
+     - **Tier 2 (커밋 & PR 직전 1회)**: `uv run mypy .` + `uv run pytest -m "not integration" -x` (통합 제외, 첫 실패 시 즉시 중단).
+     - **Tier 3 (원격 CI)**: PR 푸시 시 GitHub Actions 러너가 전체 회귀(통합 테스트 포함 전수 검사)를 수행하며 Required Check로 보호.
+     - 외부 네트워크 I/O Mocking 원칙 및 중앙 PR 린터 본문 개행(`\n`) 완화 지원 반영.
+  3. **외부 I/O Mocking 보강**:
+     - `tests/test_records.py`에 `mock_ai_vectorization` autouse fixture를 도입하여 비동기 AI 에이전트 벡터화 HTTP 호출이 임의의 테스트에서 외부로 새어나가는 것을 원천 차단 (0ms 대기 보장).
+  4. **품질 검증**:
+     - Tier 1: `uv run ruff check .` (All checks passed!), `uv run pytest tests/test_records.py` (3 passed in 0.14s)
+     - Tier 2: `uv run mypy .` (Success: no issues found in 99 source files), `uv run pytest -m "not integration" -x` (전체 112개 테스트 100% 통과, 14.56s)
+
 ## 2026-09-29: Cloud Run 기동 에러(SAEnum inherit_schema) 해결 및 DPYB 팀 브랜딩 반영
 - **배경**:
   - Google Cloud Run 배포 기동 시 `sqlalchemy.exc.ArgumentError: Ambiguously setting inherit_schema=True while also passing a schema argument` 에러로 컨테이너가 exit(1) 크래시되며 8000 포트 타임아웃 발생.
