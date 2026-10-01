@@ -48,9 +48,9 @@
   - 보안상 `X-Member-Id` 헤더 우회는 원천 금지되며, 미인증 또는 위조 헤더 단독 요청은 `401 Unauthorized`로 차단.
 - **에러 응답 규격**: 모든 예외는 전역 핸들러를 통해 일관되게 `{"code": "ERROR_CODE", "message": "설명"}` 형태로 반환 (18종 카탈로그 준수).
 - **무과금 배포 정책 ($0)**:
-  - Render(웹서비스) + Supabase(PostgreSQL) + Cloudflare(DNS/CDN) 3단 무료 티어 우선 활용.
+  - Google Cloud Run(서울 리전) + Supabase(PostgreSQL) + Cloudflare(DNS/CDN) 구조 활용.
   - 동적 `$PORT` 환경변수 바인딩 (`Dockerfile`).
-  - `/health` 엔드포인트에서 Supabase `SELECT 1`을 수행하여 Render(15분 인바운드 트래픽)와 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 동시 방지.
+  - `/health` 엔드포인트에서 Supabase `SELECT 1`을 수행하여 Supabase(7일 무쿼리 비활성화) 슬립을 1회 호출로 방지.
   - 중앙 `DPYB/.github` 워크플로우에서 10분 주기로 서비스 전체를 일괄 핑하는 중앙 킵얼라이브 연동 (개별 `keep-alive.yml` 크론 불필요).
 - **AI 자가 검증 (계층형 3단계 검증 워크플로우 - 3-Tier Verification)**:
   - **Tier 1 (작업 중 - 초고속 피드백)**:

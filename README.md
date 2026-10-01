@@ -11,8 +11,8 @@ DPYB 서비스는 사용자 가상 서재 웹(`frontend-reader-web`)과 AI 사�
 
 ```mermaid
 flowchart LR
-    Client["frontend-reader-web<br/>(Cloudflare Pages)"] -- "REST API / JWT" --> Core["backend-core-api<br/>(FastAPI / Render)"]
-    AIAgent["backend-ai-agent<br/>(LangGraph / Render)"] -- "내 서재/독서상태 조회" --> Core
+    Client["frontend-reader-web<br/>(Cloudflare Pages)"] -- "REST API / JWT" --> Core["backend-core-api<br/>(FastAPI / Google Cloud Run)"]
+    AIAgent["backend-ai-agent<br/>(LangGraph / Google Cloud Run)"] -- "내 서재/독서상태 조회" --> Core
 
     Core --> Supabase[("Supabase PostgreSQL<br/>• member (회원/약관)<br/>• core (서재/도서/책장)<br/>• record (세션/기록)")]
     Core --> NL["국립중앙도서관 API<br/>(정식 서지정보 검색)"]
@@ -51,7 +51,7 @@ flowchart LR
 | **언어 & 프레임워크** | Python 3.12, FastAPI, Pydantic v2 |
 | **ORM & 비동기 DB** | SQLAlchemy 2.0 (`asyncpg`), Alembic |
 | **데이터베이스** | Supabase PostgreSQL (Free Tier, `member`, `core`, `record` 스키마 격리) |
-| **인프라 & 배포** | Render Web Service (Dockerfile 동적 `$PORT` 바인딩) |
+| **인프라 & 배포** | Google Cloud Run (asia-northeast3 서울 리전, Dockerfile 동적 `$PORT` 바인딩) |
 | **코드 품질 & 테스트** | Ruff (린트/포맷), Mypy (정적 타입), Pytest (단위/통합 테스트 111개 100% Pass) |
 
 ---
