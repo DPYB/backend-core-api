@@ -1,5 +1,20 @@
 # PLAN (미완료 계획)
 
+## [Deployment & Operations] 게스트 체험 모드 배포 및 타 레포 연동 계획
+
+### 체크리스트
+- [ ] Phase 1 (AI Agent 선배포): `backend-ai-agent`에서 게스트 토큰(`role: guest`) 대상 대화 턴수 제한 및 게스트 전역 일일 LLM 호출 상한(비상 서킷브레이커) 배포
+- [ ] Phase 2 (Core API 배포): `ENABLE_GUEST_WRITE=False` 기본값 상태로 배포하여 잠정 안정화
+- [ ] Phase 3 (Frontend 배포): `frontend-reader-web` 상단 공용 서재 안내 띠 배너 배포
+- [ ] Phase 4 (게스트 쓰기 활성화): Cloud Run / Render 환경변수 `ENABLE_GUEST_WRITE=True` 적용으로 실환경 개방
+- [ ] 운영 리셋 확인: 게스트 서재 정리 필요 시 `POST /api/v1/admin/demo/reset?target=guest` 호출 동작 확인
+- [ ] 시연 리셋 확인: 발표 전 시연 서재 복원 시 `POST /api/v1/admin/demo/reset?target=demo` 호출 동작 확인
+
+
+
+
+
+
 ## [Feature] 해커톤 공개 데모 계정 보호 & 쓰기 상한(Quota) 및 새벽 자동 리셋
 
 ### 배경 및 목적

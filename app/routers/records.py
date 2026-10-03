@@ -1,8 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.core.rate_limit import get_client_ip, guest_rate_limiter
 from app.core.security import get_current_member_id
 from app.db.session import get_db
 from app.schemas.record import RecordCreateRequest, RecordResponse
@@ -14,10 +16,17 @@ router = APIRouter(prefix="/api/v1/records", tags=["records"])
 @router.post("", response_model=RecordResponse, status_code=status.HTTP_201_CREATED)
 async def create_record(
     request: RecordCreateRequest,
+    http_request: Request,
     member_id: uuid.UUID = Depends(get_current_member_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """독서 기록 및 스크랩 최종 저장."""
+    """독서 기록 및 스크랩 최종 저장 (게스트는 AI 벡터화 보호를 위해 IP당 분당 5회 제한)."""
+    if str(member_id) == settings.GUEST_MEMBER_ID:
+        client_ip = get_client_ip(http_request)
+        guest_rate_limiter.check(
+            f"guest_record:{client_ip}", max_requests=5, window_seconds=60
+        )
+
     return await record_service.create_record(db, member_id, request)
 
 

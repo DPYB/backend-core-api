@@ -4,8 +4,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.rate_limit import guest_rate_limiter
-from app.core.security import decode_jwt_token, get_demo_member_id
+from app.core.security import (
+    decode_jwt_token,
+    get_guest_member_id,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -34,6 +38,8 @@ async def test_guest_token_new_issue_and_claims(client: AsyncClient):
     assert "accessToken" in data
     assert data["sub"].startswith("guest-")
     assert data["guestId"] in data["sub"]
+    assert "noticeBanner" in data
+    assert "공용 체험 모드" in data["noticeBanner"]
 
     # 디코딩 및 클레임 검증
     payload = decode_jwt_token(data["accessToken"])
@@ -93,12 +99,12 @@ async def test_rate_limit_split_issue_vs_refresh(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_guest_token_maps_to_demo_member_id_on_read(
+async def test_guest_token_maps_to_guest_member_id_on_read(
     client: AsyncClient, db_session: AsyncSession
 ):
     """
     4. Mock 데이터 중앙 매핑:
-       - 게스트 토큰으로 GET 요청 시 DEMO_MEMBER_ID로 매핑되어 기본 책장 및 대표 사서 조회 성공
+       - 게스트 토큰으로 GET 요청 시 GUEST_MEMBER_ID로 매핑되어 기본 책장 및 대표 사서 조회 성공
     """
     guest_resp = await client.post("/api/v1/auth/guest", json={})
     guest_token = guest_resp.json()["accessToken"]
@@ -123,15 +129,19 @@ async def test_guest_token_maps_to_demo_member_id_on_read(
     profile_resp = await client.get("/api/v1/users/me", headers=guest_headers)
     assert profile_resp.status_code == 200
     p_data = profile_resp.json()
-    assert p_data["memberId"] == str(get_demo_member_id())
+    assert p_data["memberId"] == str(get_guest_member_id())
 
 
 @pytest.mark.asyncio
-async def test_guest_token_readonly_lock_blocks_all_mutations(client: AsyncClient):
+async def test_guest_token_blocked_unauthorized_mutations(
+    client: AsyncClient, monkeypatch
+):
     """
-    5. 무결점 Read-Only 락:
-       - role == 'guest'일 때 모든 POST/PUT/PATCH/DELETE 요청을 403 Forbidden으로 차단
+    5. 게스트 보호 라우트 차단 (403 GUEST_ACCOUNT_PROTECTED):
+       - 쓰기 모드가 활성화되어 있어도 책장 생성, 프로필 수정, 회원 탈퇴, 대표 사서 변경 등 공용/계정 파괴적 쓰기는 차단
     """
+    monkeypatch.setattr(settings, "ENABLE_GUEST_WRITE", True)
+
     guest_resp = await client.post("/api/v1/auth/guest", json={})
     guest_token = guest_resp.json()["accessToken"]
     guest_headers = {"Authorization": f"Bearer {guest_token}"}
@@ -143,36 +153,56 @@ async def test_guest_token_readonly_lock_blocks_all_mutations(client: AsyncClien
         headers=guest_headers,
     )
     assert post_shelf.status_code == 403
-    assert post_shelf.json()["code"] == "GUEST_READONLY_MODE"
+    assert post_shelf.json()["code"] == "GUEST_ACCOUNT_PROTECTED"
 
-    # 2. POST 도서 등록 시도 -> 403 차단
-    post_book = await client.post(
-        "/api/v1/library/books",
-        json={"title": "게스트의 불법 도서", "author": "해커"},
-        headers=guest_headers,
-    )
-    assert post_book.status_code == 403
-    assert post_book.json()["code"] == "GUEST_READONLY_MODE"
-
-    # 3. PATCH 프로필 수정 시도 -> 403 차단
+    # 2. PATCH 프로필 수정 시도 -> 403 차단
     patch_user = await client.patch(
         "/api/v1/users/me",
         json={"nickname": "해커게스트"},
         headers=guest_headers,
     )
     assert patch_user.status_code == 403
-    assert patch_user.json()["code"] == "GUEST_READONLY_MODE"
+    assert patch_user.json()["code"] == "GUEST_ACCOUNT_PROTECTED"
 
-    # 4. DELETE 회원 탈퇴 시도 -> 403 차단
+    # 3. DELETE 회원 탈퇴 시도 -> 403 차단
     del_user = await client.delete("/api/v1/users/me", headers=guest_headers)
     assert del_user.status_code == 403
-    assert del_user.json()["code"] == "GUEST_READONLY_MODE"
+    assert del_user.json()["code"] == "GUEST_ACCOUNT_PROTECTED"
 
-    # 5. POST 독서 기록 작성 시도 -> 403 차단
-    post_rec = await client.post(
-        "/api/v1/records",
-        json={"title": "게스트 독서록", "content": "내용"},
+    # 4. PUT 대표 사서 변경 시도 -> 403 차단
+    put_rep = await client.put(
+        "/api/v1/librarians/representative",
+        json={"type": "GECKO"},
         headers=guest_headers,
     )
-    assert post_rec.status_code == 403
-    assert post_rec.json()["code"] == "GUEST_READONLY_MODE"
+    assert put_rep.status_code == 403
+    assert put_rep.json()["code"] == "GUEST_ACCOUNT_PROTECTED"
+
+
+@pytest.mark.asyncio
+async def test_guest_token_kill_switch_blocks_mutations(
+    client: AsyncClient, monkeypatch
+):
+    """
+    6. 긴급 킬스위치 검증:
+       - ENABLE_GUEST_WRITE=False 일 때 쓰기 요청은 403 GUEST_READONLY_MODE로 차단
+       - 읽기(GET) 요청은 정상 200 통과
+    """
+    monkeypatch.setattr(settings, "ENABLE_GUEST_WRITE", False)
+
+    guest_resp = await client.post("/api/v1/auth/guest", json={})
+    guest_token = guest_resp.json()["accessToken"]
+    guest_headers = {"Authorization": f"Bearer {guest_token}"}
+
+    # 읽기는 여전히 정상 허용
+    get_books = await client.get("/api/v1/library/books", headers=guest_headers)
+    assert get_books.status_code == 200
+
+    # 평소에는 allowlist로 허용되던 도서 등록도 킬스위치 시 403 차단
+    post_book = await client.post(
+        "/api/v1/library/books",
+        json={"title": "게스트 도서", "author": "저자", "isbn": "9781234567890"},
+        headers=guest_headers,
+    )
+    assert post_book.status_code == 403
+    assert post_book.json()["code"] == "GUEST_READONLY_MODE"

@@ -93,6 +93,7 @@ class GuestLoginResponse(CamelModel):
     sub: str
     role: str = "guest"
     is_guest: bool = True
+    notice_banner: str = "현재 공용 체험 모드입니다. 다른 사용자와 서재가 공유되며, 매일 새벽에 초기화됩니다."
 
     @computed_field(alias="access_token")  # type: ignore[prop-decorator]
     @property

@@ -1,7 +1,7 @@
 import secrets
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -32,11 +32,15 @@ def verify_admin_key(
 @router.post(
     "/demo/reset",
     status_code=status.HTTP_200_OK,
-    summary="데모 계정 서재 및 시연 데이터 멱등 리셋",
-    description="시드 도서 16종 외 잉여 데이터 정리 및 진도율/완독상태를 시드 기준값으로 원복합니다.",
+    summary="데모/게스트 계정 서재 및 시연 데이터 멱등 리셋",
+    description="시드 도서 외 잉여 데이터 정리 및 진도율/완독상태를 시드 기준값으로 원복합니다. (target=all|demo|guest)",
 )
 async def reset_demo_account(
+    target: str = Query(
+        "all",
+        description="리셋 대상 계정: 'all'(전체), 'demo'(발표용 데모 계정), 'guest'(공용 체험 계정)",
+    ),
     _: str = Depends(verify_admin_key),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    return await DemoResetService.reset_demo_account(db)
+    return await DemoResetService.reset_accounts(db, target=target)

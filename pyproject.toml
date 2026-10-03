@@ -31,7 +31,7 @@ dev = [
 
 [tool.pytest.ini_options]
 minversion = "8.0"
-addopts = "-q --tb=short --import-mode=importlib"
+addopts = "-q --tb=short --import-mode=importlib -m \"not integration\""
 asyncio_mode = "auto"
 testpaths = [
     "tests",

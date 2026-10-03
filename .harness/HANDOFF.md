@@ -1,6 +1,36 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
-## 2026-09-29: 단위 테스트 고속화 & 계층형 3단계 검증(3-Tier Verification) 적용
+## 2026-10-02: 게스트 공용 체험 모드 분리(GUEST_MEMBER_ID) 및 안전한 쓰기 개방 체계 구축
+- **배경**:
+  - 해커톤 심사 및 사용자 유입 시 발표용 계정(`DEMO_MEMBER_ID`, `dpyb26`)과 게스트(`POST /guest`)가 동일한 ID를 공유하여 발생하던 시연 서재 오염 위험을 원천 배제.
+  - 게스트에게 도서/스크랩 등록, 진도율 변경, 독서 세션 등 핵심 쓰기 기능을 Allowlist 기반으로 안전하게 개방하여 $0 무과금 인프라를 지키면서도 적극적인 서비스 체험 지원 ("방안 1 변형" 채택).
+- **구현 및 변경 사항**:
+  1. **식별자 물리 분리 (`app/config.py`, `app/core/security.py`, `app/services/member_service.py`)**:
+     - `settings.GUEST_MEMBER_ID = "00000000-0000-0000-0000-000000000003"` 신설.
+     - `get_current_member_id` 및 `get_optional_member_id`에서 게스트 토큰(`role: guest` 또는 `sub: guest-*`) 수신 시 `GUEST_MEMBER_ID`로 라우팅.
+     - `MemberService.ensure_guest_member`: 게스트 회원 레코드 및 기본 책장, 고양이 사서 자동 생성 보장 및 최초 9권 시드 도서 자동 주입(Seed-on-First-Creation)으로 빈 서재 노출 방지.
+  2. **Allowlist 기반 쓰기 개방 & 파괴적 행위 보호 (`app/main.py`)**:
+     - 기존의 게스트 일괄 쓰기 차단(403 `GUEST_READONLY_MODE`)을 걷어내고 Allowlist 기반 선택적 허용으로 전환.
+     - 허용: 도서 등록/수정/삭제, 진도율 변경, 책장 이동, 스크랩 등록/수정/삭제, 독서 세션 기록, 독서 감상기록 작성.
+     - 차단: 공용 화면 혼란을 막기 위한 대표 사서 변경(`PUT /librarians/representative`), 회원 탈퇴, 비밀번호 변경, 프로필 수정은 403 `GUEST_ACCOUNT_PROTECTED` 차단.
+     - 긴급 킬스위치: `ENABLE_GUEST_WRITE=False` 시 모든 쓰기를 즉시 403 `GUEST_READONLY_MODE`로 롤백.
+  3. **스팸 및 DB 용량 폭탄 방어 (Quota, Sanitization, Rate Limit)**:
+     - 쿼터 가드: 도서 최대 25권(`DEMO_MAX_BOOKS`), 도서당 스크랩 10개(`DEMO_MAX_SCRAPS_PER_BOOK`) 초과 시 403 `DEMO_QUOTA_EXCEEDED` 차단.
+     - 스크랩 이미지 처리 차별화: 게스트가 등록/수정하는 스크랩의 이미지는 빈 문자열(`""`)로 강제 정제(프론트엔드 `ScrapGallery.jsx` 실측 확인: 깨진 이미지 없이 `사진 없음` 텍스트 카드로 안전 폴백). 일반 회원은 문장 크롭 OCR을 위해 2MB 상한(`max_length=2_000_000`)의 Base64 Data URL 보존.
+     - 악성 표지 URL 정제(`is_safe_cover_url`): HTTPS 및 공인 호스트(`contents.kyobobook.co.kr`, `*.nl.go.kr`, `image.aladin.co.kr`) 정밀 파싱(`urllib.parse`), 스푸핑이나 비인가 외부 URL 입력 시 교보 CDN 또는 기본 표지(`"/books.webp"`)로 안전 폴백.
+     - AI 벡터화 보호 Rate Limit: 게스트의 감상기록 생성(`POST /api/v1/records`) 시 `get_client_ip`(`CF-Connecting-IP` 1순위) 기반 분당 5회 소프트 슬라이딩 윈도우 적용.
+  4. **관리자 멱등 리셋 및 시드 CLI 확장 (`DemoResetService`, `scripts/seed_demo_library.py`)**:
+     - `POST /api/v1/admin/demo/reset?target=all|demo|guest` 파라미터 지원으로 게스트 서재와 데모 서재를 선택적/일괄 멱등 복원.
+     - `scripts/seed_demo_library.py`: `--target all|demo|guest` CLI 옵션 지원 및 `seed_account` 재사용 함수 추출.
+  5. **프론트엔드 공용 서재 안내 배너 필드 지원 (`app/schemas/auth.py`, `app/routers/auth.py`)**:
+     - `GuestLoginResponse`에 `notice_banner: str = "현재 공용 체험 모드입니다. 다른 사용자와 서재가 공유되며, 매일 새벽에 초기화됩니다."` 필드 추가.
+  6. **테스트 및 계층형 검증 결과**:
+     - `tests/test_guest_demo.py` 신설: 쓰기 전체 생명주기, 쿼터 차단, 표지 URL 정제, 스크랩 이미지 차별화, 2MB 초과 차단, 발표 계정과의 데이터 격리(Isolation Test), IP Rate Limit 7개 테스트 100% 통과.
+     - `tests/test_guest_auth.py`, `tests/test_demo_reset.py` 최신 규격으로 갱신 통과.
+     - Tier 1/Tier 2 검증: `ruff format --check .` (110개 파일 통과), `ruff check .` (0 에러), `mypy .` (100개 파일 무결점), `pytest -m "not integration" -x` (총 120개 테스트 100% 통과, 13.53s).
+- **타 레포 연동 및 배포 시 참고사항**:
+  - `backend-ai-agent` 선배포: 게스트 토큰(`role: guest`) 대상 대화 턴수 제한 및 게스트 일일 LLM 호출 상한(비상 서킷브레이커) 우선 배포 권장.
+  - `backend-core-api` 배포: `ENABLE_GUEST_WRITE=False` 기본값 배포 후 프론트엔드 안내 배너 배포 시점에 `ENABLE_GUEST_WRITE=True` 활성화 권장.
 - **배경**:
   - `backend-ai-agent`에서 테스트 실행 시간을 84초 ➔ 9~13초대로 단축시킨 접근 방식을 `backend-core-api`에도 적용하여 개발 및 PR 검증 생산성 극대화.
 - **적용 내용**:

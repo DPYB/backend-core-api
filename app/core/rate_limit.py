@@ -50,11 +50,23 @@ guest_rate_limiter = InMemoryRateLimiter()
 
 
 def get_client_ip(request: Request) -> str:
-    """요청의 클라이언트 IP를 안전하게 추출합니다 (X-Forwarded-For 및 client.host 지원)."""
+    """
+    요청의 클라이언트 IP를 추출합니다.
+    1. Cloudflare 엣지 헤더(CF-Connecting-IP) 최우선 확인
+    2. 표준 X-Forwarded-For 프록시 헤더 확인 (좌측 첫 번째 원본 IP)
+    3. 직결 클라이언트 호스트(request.client.host) 폴백
+    """
+    cf_ip = request.headers.get("CF-Connecting-IP")
+    if cf_ip and cf_ip.strip():
+        return cf_ip.strip()
+
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
         # 가장 앞쪽의 원본 클라이언트 IP 선택
-        return forwarded.split(",")[0].strip()
+        first_ip = forwarded.split(",")[0].strip()
+        if first_ip:
+            return first_ip
+
     if request.client and request.client.host:
         return request.client.host
     return "127.0.0.1"

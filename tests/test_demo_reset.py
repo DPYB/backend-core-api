@@ -123,27 +123,38 @@ async def test_admin_demo_reset_success_and_idempotence(
     )
     db_session.add_all([surplus_scrap, surplus_session, surplus_record])
     await db_session.commit()
+    seed_book_id = seed_book.id
+    valid_sentence = valid_scrap.sentence
 
-    # 2-3. 정상 관리자 리셋 호출
+    # 2-3. 정상 관리자 리셋 호출 (target=demo)
     admin_headers = {"X-Admin-Key": settings.ADMIN_API_KEY}
-    resp1 = await client.post("/api/v1/admin/demo/reset", headers=admin_headers)
+    resp1 = await client.post(
+        "/api/v1/admin/demo/reset?target=demo", headers=admin_headers
+    )
     assert resp1.status_code == 200
     data1 = resp1.json()
     assert data1["status"] == "SUCCESS"
-    assert data1["deleted_surplus_books"] >= 1
-    assert data1["deleted_surplus_scraps"] >= 1
-    assert data1["restored_seed_books"] == 1
+    assert data1["target"] == "demo"
+    assert len(data1["results"]) == 1
+    demo_result = data1["results"][0]
+    assert demo_result["deleted_surplus_books"] >= 1
+    assert demo_result["deleted_surplus_scraps"] >= 1
+    assert demo_result["restored_seed_books"] == 1
 
     # 2-4. DB 반영 상태 검증
-    # 잉여 도서는 삭제되었어야 함
+    db_session.expire_all()
+    # 잉여 도서(ISBN 9789999999999)는 삭제되었어야 함
     surplus_book_check = await db_session.execute(
-        select(LibraryBook).where(LibraryBook.id == surplus_book.id)
+        select(LibraryBook).where(
+            LibraryBook.member_id == demo_member_id,
+            LibraryBook.isbn == "9789999999999",
+        )
     )
     assert surplus_book_check.scalar_one_or_none() is None
 
     # 시드 도서는 원래 기준값으로 복원되었어야 함
     refreshed_seed = await db_session.execute(
-        select(LibraryBook).where(LibraryBook.id == seed_book.id)
+        select(LibraryBook).where(LibraryBook.id == seed_book_id)
     )
     book_after_reset = refreshed_seed.scalar_one()
     expected_meta = DEMO_SEED_BOOKS_BY_ISBN[seed_isbn]
@@ -155,17 +166,32 @@ async def test_admin_demo_reset_success_and_idempotence(
 
     # 시드 도서의 오염된 스크랩은 삭제되고 정규 스크랩만 남았어야 함
     scraps_check = (
-        (await db_session.execute(select(Scrap).where(Scrap.book_id == seed_book.id)))
+        (await db_session.execute(select(Scrap).where(Scrap.book_id == seed_book_id)))
         .scalars()
         .all()
     )
     assert len(scraps_check) == 1
-    assert scraps_check[0].sentence == valid_scrap.sentence
+    assert scraps_check[0].sentence == valid_sentence
 
-    # 2-5. 멱등성 검증 (동일한 리셋 재호출 시 에러 없이 SUCCESS)
-    resp2 = await client.post("/api/v1/admin/demo/reset", headers=admin_headers)
+    # 2-5. 멱등성 검증 (target=all 전체 리셋 재호출 시 에러 없이 SUCCESS)
+    resp2 = await client.post(
+        "/api/v1/admin/demo/reset?target=all", headers=admin_headers
+    )
     assert resp2.status_code == 200
     data2 = resp2.json()
     assert data2["status"] == "SUCCESS"
-    assert data2["deleted_surplus_books"] == 0
-    assert data2["restored_seed_books"] == 1
+    assert data2["target"] == "all"
+    assert len(data2["results"]) == 2
+    assert data2["results"][0]["deleted_surplus_books"] == 0
+    assert data2["results"][0]["restored_seed_books"] == 16
+    assert data2["results"][0]["recreated_seed_books"] == 0
+
+    # 2-6. target=guest 단독 리셋 호출 검증
+    resp_guest = await client.post(
+        "/api/v1/admin/demo/reset?target=guest", headers=admin_headers
+    )
+    assert resp_guest.status_code == 200
+    data_guest = resp_guest.json()
+    assert data_guest["status"] == "SUCCESS"
+    assert data_guest["target"] == "guest"
+    assert len(data_guest["results"]) == 1

@@ -163,7 +163,13 @@ async def test_acquire_librarian_default_name_fallback(client: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_member_profile_librarian_info_and_alias(client: AsyncClient):
-    # 1. 개발자 간편 로그인으로 신규 회원 생성 (기본 CAT "블루" 대표 사서 자동 부여)
+    # 1. 회원 생성 후 로그인
+    from app.services.member_service import MemberService
+    from tests.conftest import TestSessionLocal
+
+    async with TestSessionLocal() as session:
+        await MemberService.get_or_create_dev_member(session, "nuditest@example.com")
+
     login_resp = await client.post(
         "/api/v1/auth/login", json={"email": "nuditest@example.com"}
     )

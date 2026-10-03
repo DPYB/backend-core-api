@@ -43,8 +43,8 @@ class BookService:
     async def create_book(
         db: AsyncSession, member_id: uuid.UUID, req: CreateLibraryBookRequest
     ) -> CreateLibraryBookResponse:
-        # 데모 계정 도서 등록 쿼터(상한) 검증
-        if str(member_id) == settings.DEMO_MEMBER_ID:
+        # 데모 및 게스트 계정 도서 등록 쿼터(상한) 검증
+        if str(member_id) in (settings.DEMO_MEMBER_ID, settings.GUEST_MEMBER_ID):
             active_books_count_stmt = select(func.count(LibraryBook.id)).where(
                 LibraryBook.member_id == member_id,
                 LibraryBook.deleted_at.is_(None),
@@ -54,7 +54,7 @@ class BookService:
             ).scalar() or 0
             if active_books_count >= settings.DEMO_MAX_BOOKS:
                 raise DemoQuotaExceededException(
-                    f"데모 계정의 최대 등록 도서 수({settings.DEMO_MAX_BOOKS}권)를 초과할 수 없습니다."
+                    f"체험 및 데모 계정의 최대 등록 도서 수({settings.DEMO_MAX_BOOKS}권)를 초과할 수 없습니다."
                 )
 
         # 1. 책장 확인 또는 기본 책장 배정
@@ -125,7 +125,10 @@ class BookService:
         elif req.current_page > 0 and status == BookReadingStatus.PLANNED:
             status = BookReadingStatus.READING
 
-        verified_cover_url = get_verified_cover_url(req.cover_url, clean_isbn)
+        is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+        verified_cover_url = get_verified_cover_url(
+            req.cover_url, clean_isbn, is_guest=is_guest
+        )
 
         book = LibraryBook(
             member_id=member_id,
@@ -434,7 +437,10 @@ class BookService:
         book.subject = req.subject.strip() if req.subject else None
         book.publisher = req.publisher.strip() if req.publisher else None
         book.published_date = req.published_date
-        book.cover_url = get_verified_cover_url(req.cover_url, clean_isbn)
+        is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+        book.cover_url = get_verified_cover_url(
+            req.cover_url, clean_isbn, is_guest=is_guest
+        )
         book.reading_status = new_status
         book.total_pages = req.total_pages
 

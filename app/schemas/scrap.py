@@ -9,7 +9,9 @@ from app.schemas.common import CamelModel, PaginatedResponse
 class CreateScrapRequest(CamelModel):
     sentence: str = Field(..., description="스크랩 문장")
     page_number: int | None = Field(None, ge=1, description="페이지 번호")
-    scrap_image_url: str = Field(..., description="스크랩 이미지 URL")
+    scrap_image_url: str = Field(
+        "", max_length=2_000_000, description="스크랩 이미지 URL 또는 Base64 Data URL"
+    )
     memo: str | None = Field(None, description="메모")
 
     @field_validator("sentence")
@@ -21,10 +23,13 @@ class CreateScrapRequest(CamelModel):
 
     @field_validator("scrap_image_url")
     @classmethod
-    def validate_url(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise InvalidScrapDataException("스크랩 이미지 URL은 필수입니다.")
-        return v.strip()
+    def validate_url(cls, v: str | None) -> str:
+        if v is None:
+            return ""
+        val = v.strip()
+        if len(val) > 2_000_000:
+            raise ValueError("스크랩 이미지 데이터 크기는 2MB를 초과할 수 없습니다.")
+        return val
 
 
 class CreateScrapResponse(CamelModel):
@@ -69,7 +74,9 @@ class ScrapDetailResponse(CamelModel):
 class UpdateScrapRequest(CamelModel):
     sentence: str = Field(..., description="스크랩 문장")
     page_number: int | None = Field(None, ge=1, description="페이지 번호")
-    scrap_image_url: str = Field(..., description="스크랩 이미지 URL")
+    scrap_image_url: str = Field(
+        "", max_length=2_000_000, description="스크랩 이미지 URL 또는 Base64 Data URL"
+    )
     memo: str | None = Field(None, description="메모")
 
     @field_validator("sentence")
@@ -81,10 +88,13 @@ class UpdateScrapRequest(CamelModel):
 
     @field_validator("scrap_image_url")
     @classmethod
-    def validate_url(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise InvalidScrapDataException("스크랩 이미지 URL은 필수입니다.")
-        return v.strip()
+    def validate_url(cls, v: str | None) -> str:
+        if v is None:
+            return ""
+        val = v.strip()
+        if len(val) > 2_000_000:
+            raise ValueError("스크랩 이미지 데이터 크기는 2MB를 초과할 수 없습니다.")
+        return val
 
 
 class UpdateScrapResponse(CamelModel):
