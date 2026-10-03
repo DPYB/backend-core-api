@@ -117,8 +117,11 @@ class MemberService:
         member = res.scalars().first()
 
         if member:
-            # dpyb26@gmail.com 데모 계정에 프로필 이미지가 없으면 chris.png 설정
-            if clean_email == "dpyb26@gmail.com" and not member.profile_image_url:
+            # 데모 계정에 프로필 이미지가 없으면 chris.png 설정
+            if (
+                clean_email in ("dpyb@gmail.com", "dpyb26@gmail.com")
+                and not member.profile_image_url
+            ):
                 member.profile_image_url = "/profile/chris.png"
                 await db.commit()
                 await db.refresh(member)
@@ -128,7 +131,9 @@ class MemberService:
         nickname = clean_email.split("@")[0][:50] or "reader"
         new_member_id = uuid.uuid4()
         default_profile = (
-            "/profile/chris.png" if clean_email == "dpyb26@gmail.com" else None
+            "/profile/chris.png"
+            if clean_email in ("dpyb@gmail.com", "dpyb26@gmail.com")
+            else None
         )
         new_member = Member(
             member_id=new_member_id,
@@ -324,6 +329,103 @@ class MemberService:
             await db.commit()
             await db.refresh(member)
 
+        return member
+
+    @staticmethod
+    async def ensure_guest_member(db: AsyncSession) -> Member:
+        """
+        체험 모드(게스트)를 위한 공용 게스트 회원 레코드 및 기본 책장/사서/초기 시드(9권)를 보장합니다.
+        배포 직후 관리자 리셋 전이라도 빈 서재로 노출되지 않도록 최초 1회 도서를 자동 주입합니다.
+        """
+        from app.core.security import get_guest_member_id
+        from app.core.shelf_rank import ShelfRank
+        from app.models.library_book import LibraryBook
+        from app.models.scrap import Scrap
+        from app.services.demo_seed_data import GUEST_SEED_BOOKS
+
+        guest_id = get_guest_member_id()
+        stmt = select(Member).where(Member.member_id == guest_id)
+        res = await db.execute(stmt)
+        member = res.scalars().first()
+
+        if not member:
+            from sqlalchemy.exc import IntegrityError
+
+            try:
+                member = Member(
+                    member_id=guest_id,
+                    email="guest-trial@dontpawget.app",
+                    nickname="게스트 체험",
+                    profile_image_url="/profile/clia.png",
+                    status="ACTIVE",
+                    provider="GUEST",
+                    provider_id="guest-trial",
+                )
+                db.add(member)
+                await db.flush()
+
+                default_shelf = await ShelfService.get_or_create_default_shelf(
+                    db, guest_id
+                )
+                await MemberService._ensure_default_cat_librarian(db, guest_id)
+
+                # 최초 게스트 계정 생성 시 시드 도서 9권 및 스크랩(빈 이미지) 주입
+                ranks = ShelfRank.rebalanced_sequence(len(GUEST_SEED_BOOKS))
+                for idx, book_data in enumerate(GUEST_SEED_BOOKS):
+                    book = LibraryBook(
+                        member_id=guest_id,
+                        shelf_id=default_shelf.id,
+                        shelf_rank=ranks[idx],
+                        title=book_data["title"],
+                        author=book_data["author"],
+                        isbn=book_data["isbn"],
+                        genre=book_data["genre"],
+                        kdc=book_data["kdc"],
+                        subject=book_data["subject"],
+                        publisher=book_data["publisher"],
+                        published_date=book_data["published_date"],
+                        cover_url=book_data["cover_url"],
+                        total_pages=book_data["total_pages"],
+                        current_page=book_data["current_page"],
+                        reading_status=book_data["reading_status"],
+                        completed_at=None,
+                    )
+                    db.add(book)
+                    await db.flush()
+
+                    for scrap_item in book_data.get("scraps", []):
+                        scrap = Scrap(
+                            book_id=book.id,
+                            sentence=scrap_item["sentence"],
+                            page_number=scrap_item["page_number"],
+                            scrap_image_url="",  # 게스트는 빈 문자열 고정
+                            memo=scrap_item["memo"],
+                        )
+                        db.add(scrap)
+
+                await db.commit()
+                stmt = select(Member).where(Member.member_id == guest_id)
+                res = await db.execute(stmt)
+                member = res.scalars().first()
+            except IntegrityError:
+                import asyncio
+
+                await db.rollback()
+                member = None
+                for _ in range(10):
+                    await asyncio.sleep(0.02)
+                    stmt = select(Member).where(Member.member_id == guest_id)
+                    res = await db.execute(stmt)
+                    member = res.scalars().first()
+                    if member:
+                        break
+                if not member:
+                    raise
+        elif not member.profile_image_url:
+            member.profile_image_url = "/profile/clia.png"
+            await db.commit()
+
+        assert member is not None
         return member
 
     @staticmethod

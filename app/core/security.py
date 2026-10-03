@@ -42,11 +42,19 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def get_demo_member_id() -> uuid.UUID:
-    """체험 모드(게스트) 사용자를 위한 데모 계정 member_id UUID 반환"""
+    """발표 및 시연용 데모 계정 member_id UUID 반환"""
     try:
         return uuid.UUID(settings.DEMO_MEMBER_ID)
     except Exception:
         return uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+
+def get_guest_member_id() -> uuid.UUID:
+    """체험 모드(게스트) 사용자를 위한 공용 게스트 member_id UUID 반환"""
+    try:
+        return uuid.UUID(settings.GUEST_MEMBER_ID)
+    except Exception:
+        return uuid.UUID("00000000-0000-0000-0000-000000000003")
 
 
 def get_jwt_secret_key() -> str:
@@ -197,7 +205,7 @@ async def get_current_member_id(
         # 게스트 토큰 확인 (role == 'guest' 또는 sub가 'guest-'로 시작)
         sub_raw = str(payload.get("sub") or payload.get("member_id") or "")
         if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
-            return get_demo_member_id()
+            return get_guest_member_id()
 
         # 일반 회원 sub 클레임 추출 및 UUID 변환
         if not sub_raw:
@@ -224,7 +232,7 @@ async def get_optional_member_id(
     선택적 회원 식별자 추출 의존성:
     오직 유효하게 서명된 Bearer JWT가 있는 경우에만 해당 member_id를 반환하며,
     미인증 요청인 경우 예외를 발생시키지 않고 None을 반환합니다.
-    - 게스트 토큰인 경우 DEMO_MEMBER_ID를 반환합니다.
+    - 게스트 토큰인 경우 GUEST_MEMBER_ID를 반환합니다.
     """
     if not credentials or not credentials.credentials:
         return None
@@ -232,7 +240,7 @@ async def get_optional_member_id(
         payload = decode_jwt_token(credentials.credentials)
         sub_raw = str(payload.get("sub") or payload.get("member_id") or "")
         if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
-            return get_demo_member_id()
+            return get_guest_member_id()
         return uuid.UUID(sub_raw) if sub_raw else None
     except Exception:
         return None

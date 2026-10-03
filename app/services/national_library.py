@@ -1,6 +1,7 @@
 import logging
 import re
 import time
+from urllib.parse import urlparse
 
 import httpx
 
@@ -16,22 +17,55 @@ from app.schemas.search import ExternalBook
 
 logger = logging.getLogger(__name__)
 
+ALLOWED_COVER_HOSTS: set[str] = {
+    "contents.kyobobook.co.kr",
+    "cover.nl.go.kr",
+    "www.nl.go.kr",
+    "nl.go.kr",
+    "image.aladin.co.kr",
+}
 
-def get_verified_cover_url(cover_url: str | None, isbn: str | None) -> str | None:
+
+def is_safe_cover_url(url: str) -> bool:
+    """도서 표지 URL의 HTTPS 스킴 및 공인 호스트 일치 여부 정밀 파싱 검증."""
+    try:
+        parsed = urlparse(url.strip())
+        if parsed.scheme != "https":
+            return False
+        hostname = (parsed.hostname or "").lower()
+        if not hostname:
+            return False
+        return hostname in ALLOWED_COVER_HOSTS or any(
+            hostname.endswith("." + allowed) for allowed in ALLOWED_COVER_HOSTS
+        )
+    except Exception:
+        return False
+
+
+def get_verified_cover_url(
+    cover_url: str | None,
+    isbn: str | None,
+    is_guest: bool = False,
+) -> str | None:
     """
     도서 표지 이미지 URL 검증 및 교보문고 고화질 CDN 0ms 즉시 폴백.
-    1. 국립중앙도서관 공식 표지 URL이 존재하면 우선 사용.
-    2. 누락된 경우 10자리/13자리 정제된 ISBN을 기반으로 교보문고 CDN 이미지 URL 자동 생성.
+    1. 게스트 모드이거나 외부 URL이 주어졌을 때 정밀 파싱(https 및 공인 호스트) 검증.
+    2. 검증 통과 시 해당 URL 사용.
+    3. 누락되거나 위조/비공인 URL인 경우 정제된 ISBN 기반 교보문고 CDN 이미지 URL 자동 생성.
+    4. ISBN도 없으면 None 반환 (게스트의 경우 기본 표지 경로 반환).
     """
     clean_url = (cover_url or "").strip()
-    if clean_url and clean_url.startswith(("http://", "https://")):
-        return clean_url
+    if clean_url:
+        if is_safe_cover_url(clean_url):
+            return clean_url
+        if not is_guest and clean_url.startswith(("http://", "https://")):
+            return clean_url
 
     clean_isbn = re.sub(r"[^0-9X]", "", (isbn or "").strip())
     if clean_isbn and len(clean_isbn) in (10, 13):
         return f"https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/{clean_isbn}.jpg"
 
-    return None
+    return "/books.webp" if is_guest else None
 
 
 class NationalLibraryClient:

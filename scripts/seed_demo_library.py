@@ -24,6 +24,7 @@ import sys
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 # 프로젝트 루트를 sys.path에 추가하여 python scripts/... 실행 시 app 패키지 인식 보장
@@ -48,24 +49,26 @@ from app.models.reading_session import ReadingSession  # noqa: E402
 from app.models.record import Record, RecordScrap  # noqa: E402
 from app.models.scrap import Scrap  # noqa: E402
 from app.models.shelf import Shelf  # noqa: E402
-from app.services.demo_seed_data import DEMO_SEED_BOOKS  # noqa: E402
+from app.services.demo_seed_data import (  # noqa: E402
+    DEMO_SEED_BOOKS,
+    GUEST_SEED_BOOKS,
+)
 from app.services.librarian_service import LibrarianService  # noqa: E402
 from app.services.member_service import MemberService  # noqa: E402
 
-TARGET_EMAIL = "dpyb26@gmail.com"
+DEMO_TARGET_EMAIL = "dpyb@gmail.com"
+GUEST_TARGET_EMAIL = "guest-trial@dontpawget.app"
 SEOUL_TZ = ZoneInfo("Asia/Seoul")
 
-# 단일 진실 공급원(SSOT) 재사용
-SEED_BOOKS = DEMO_SEED_BOOKS
 
-
-def check_db_guard(auto_yes: bool) -> None:
+def check_db_guard(auto_yes: bool, target_desc: str = "demo/guest") -> None:
     """DB 연결 호스트 및 안전 가드 확인"""
     db_host = settings.DB_HOST or "localhost"
     is_remote = settings.is_remote_database()
+
     print("=" * 60)
     print(f"📌 대상 DB 호스트: {db_host} (원격 DB 여부: {is_remote})")
-    print(f"📌 대상 계정: {TARGET_EMAIL}")
+    print(f"📌 대상 계정 그룹: {target_desc}")
     print("=" * 60)
 
     if not auto_yes:
@@ -87,11 +90,9 @@ def generate_pseudo_embedding(text_content: str, dimension: int = 768) -> list[f
     return [x / norm for x in vector]
 
 
-async def reset_member_data(db: AsyncSession, member_id: uuid.UUID) -> None:
+async def reset_member_data(db: AsyncSession, member_id: uuid.UUID, email: str) -> None:
     """회원의 기존 서재 도서, 스크랩, 감상기록, 독서 세션 전체를 hard delete 리셋 (FK 자식 -> 부모 순)"""
-    print(
-        f"\n🧹 [--reset] {TARGET_EMAIL} 회원의 기존 데이터 전면 초기화(hard delete) 진행..."
-    )
+    print(f"\n🧹 [--reset] {email} 회원의 기존 데이터 전면 초기화(hard delete) 진행...")
     book_ids_stmt = select(LibraryBook.id).where(LibraryBook.member_id == member_id)
 
     # 1. core & record 스키마 FK 역순 삭제: scraps, records, reading_sessions, library_book
@@ -115,311 +116,303 @@ async def reset_member_data(db: AsyncSession, member_id: uuid.UUID) -> None:
     except Exception as e:
         print(f"참고: agent.debate_insights 초기화 건너뜀 ({e})")
 
-    print(f"-> {TARGET_EMAIL} 회원의 기존 도서/스크랩/기록/세션/토론기억 초기화 완료!")
+    print(f"-> {email} 회원의 기존 도서/스크랩/기록/세션/토론기억 초기화 완료!")
 
 
-async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) -> None:
-    # 재현성을 위한 난수 시드 고정
-    random.seed(42)
+async def seed_account(
+    db: AsyncSession,
+    email: str,
+    seed_books: list[dict[str, Any]],
+    reset_mode: bool = False,
+    is_guest: bool = False,
+) -> None:
+    label = "게스트" if is_guest else "데모"
+    print(f"\n[{email}] {label} 계정 서재 시드 작업 시작...")
 
-    check_db_guard(auto_yes)
+    # 1. 회원 조회 또는 생성
+    if is_guest:
+        member = await MemberService.ensure_guest_member(db)
+        is_new = False
+    else:
+        member, is_new = await MemberService.get_or_create_dev_member(db, email)
+    member_id = member.member_id
+    print(f"-> 대상 회원 ID: {member_id} (신규 생성: {is_new})")
 
-    async with AsyncSessionLocal() as db:
-        print(f"\n[{TARGET_EMAIL}] 데모 계정 서재 시드 작업 시작...")
+    # --reset 요청 시 회원의 기존 도서/스크랩/세션 전체 초기화
+    if reset_mode:
+        await reset_member_data(db, member_id, email)
 
-        # 1. 회원 조회 또는 생성
-        member, is_new = await MemberService.get_or_create_dev_member(db, TARGET_EMAIL)
-        member_id = member.member_id
-        print(f"-> 대상 회원 ID: {member_id} (신규 생성: {is_new})")
+    # 2. 사서 마스터 시드 확인 및 4종 풀세트 언락 (단일 대표 사서 보장)
+    await LibrarianService.ensure_seed_data(db)
 
-        # --reset 요청 시 회원의 기존 도서/스크랩/세션 전체 초기화
-        if reset_mode:
-            await reset_member_data(db, member_id)
+    # 기존 사서 조회
+    existing_libs_stmt = select(Librarian).where(
+        Librarian.member_id == member_id,
+        Librarian.deleted_at.is_(None),
+    )
+    existing_libs = (await db.execute(existing_libs_stmt)).scalars().all()
+    owned_types = {lib.type: lib for lib in existing_libs}
 
-        # 2. 사서 마스터 시드 확인 및 4종 풀세트 언락 (단일 대표 사서 보장)
-        await LibrarianService.ensure_seed_data(db)
-
-        # 기존 사서 조회
-        existing_libs_stmt = select(Librarian).where(
-            Librarian.member_id == member_id,
-            Librarian.deleted_at.is_(None),
-        )
-        existing_libs = (await db.execute(existing_libs_stmt)).scalars().all()
-        owned_types = {lib.type: lib for lib in existing_libs}
-
-        for l_type in [
-            LibrarianType.CAT,
-            LibrarianType.SHOEBILL,
-            LibrarianType.SEA_SLUG,
-            LibrarianType.GECKO,
-        ]:
-            if l_type not in owned_types:
-                new_lib = Librarian(
-                    member_id=member_id,
-                    type=l_type,
-                    name=DEFAULT_LIBRARIAN_NAMES.get(l_type, str(l_type)),
-                    level=1,
-                    experience=0,
-                    is_representative=(l_type == LibrarianType.CAT),
-                )
-                db.add(new_lib)
-            else:
-                # CAT만 대표 사서로 보장하고 나머지는 반드시 False로 강제 해제 (단일 대표 사서 불변식)
-                owned_types[l_type].is_representative = l_type == LibrarianType.CAT
-                owned_types[l_type].level = 1
-
-        await db.commit()
-        print(
-            "-> 사서 4종 풀세트 언락 완료 (대표 사서: '블루' 고양이 Lv.1 단일 대표 보장)"
-        )
-
-        # 3. 기본 책장 확인
-        shelf_stmt = select(Shelf).where(
-            Shelf.member_id == member_id,
-            Shelf.is_default.is_(True),
-            Shelf.deleted_at.is_(None),
-        )
-        default_shelf = (await db.execute(shelf_stmt)).scalars().first()
-        if not default_shelf:
-            default_shelf = Shelf(
+    for l_type in [
+        LibrarianType.CAT,
+        LibrarianType.SHOEBILL,
+        LibrarianType.SEA_SLUG,
+        LibrarianType.GECKO,
+    ]:
+        if l_type not in owned_types:
+            new_lib = Librarian(
                 member_id=member_id,
-                name="기본 책장",
-                is_default=True,
+                type=l_type,
+                name=DEFAULT_LIBRARIAN_NAMES.get(l_type, str(l_type)),
+                level=1,
+                experience=0,
+                is_representative=(l_type == LibrarianType.CAT),
             )
-            db.add(default_shelf)
-            await db.commit()
-            await db.refresh(default_shelf)
-        print(f"-> 기본 책장 ID: {default_shelf.id}")
+            db.add(new_lib)
+        else:
+            # CAT만 대표 사서로 보장하고 나머지는 반드시 False로 강제 해제 (단일 대표 사서 불변식)
+            owned_types[l_type].is_representative = l_type == LibrarianType.CAT
+            owned_types[l_type].level = 1
 
-        # 4. 상대 날짜(Relative Date) 기준점 계산
-        # 이번 달 리포트에 100% 반영되도록 KST 기준 이번 달 1일(month_start_utc)을 하한선으로 설정
-        now_utc = datetime.now(UTC)
-        now_kst = now_utc.astimezone(SEOUL_TZ)
-        month_start_kst = now_kst.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
+    await db.commit()
+    print("-> 사서 4종 풀세트 언락 완료 (대표 사서: '블루' 고양이 Lv.1 단일 대표 보장)")
+
+    # 3. 기본 책장 확인
+    shelf_stmt = select(Shelf).where(
+        Shelf.member_id == member_id,
+        Shelf.is_default.is_(True),
+        Shelf.deleted_at.is_(None),
+    )
+    default_shelf = (await db.execute(shelf_stmt)).scalars().first()
+    if not default_shelf:
+        default_shelf = Shelf(
+            member_id=member_id,
+            name="기본 책장",
+            is_default=True,
         )
-        month_start_utc = month_start_kst.astimezone(UTC)
+        db.add(default_shelf)
+        await db.commit()
+        await db.refresh(default_shelf)
+    print(f"-> 기본 책장 ID: {default_shelf.id}")
 
-        ranks = ShelfRank.rebalanced_sequence(len(SEED_BOOKS))
-        created_books: list[LibraryBook] = []
+    # 4. 상대 날짜(Relative Date) 기준점 계산
+    now_utc = datetime.now(UTC)
+    now_kst = now_utc.astimezone(SEOUL_TZ)
+    month_start_kst = now_kst.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    month_start_utc = month_start_kst.astimezone(UTC)
 
-        for idx, book_data in enumerate(SEED_BOOKS):
-            rank = ranks[idx]
-            isbn = book_data["isbn"]
+    ranks = ShelfRank.rebalanced_sequence(len(seed_books))
+    created_books: list[LibraryBook] = []
 
-            # 완독일 계산 (오늘 기준 -N일, 단 이번 달 1일 이후로 클램프)
-            offset = book_data["completed_offset_days"]
-            if offset is not None:
-                calc_completed = now_utc - timedelta(days=offset)
-                completed_at_val = max(
-                    calc_completed, month_start_utc + timedelta(hours=2)
-                )
-            else:
-                completed_at_val = None
+    for idx, book_data in enumerate(seed_books):
+        rank = ranks[idx]
+        isbn = book_data["isbn"]
 
-            existing_book_stmt = select(LibraryBook).where(
-                LibraryBook.member_id == member_id,
-                LibraryBook.isbn == isbn,
+        offset = book_data["completed_offset_days"]
+        if offset is not None:
+            calc_completed = now_utc - timedelta(days=offset)
+            completed_at_val = max(calc_completed, month_start_utc + timedelta(hours=2))
+        else:
+            completed_at_val = None
+
+        existing_book_stmt = select(LibraryBook).where(
+            LibraryBook.member_id == member_id,
+            LibraryBook.isbn == isbn,
+        )
+        book = (await db.execute(existing_book_stmt)).scalars().first()
+
+        if book:
+            book.deleted_at = None
+            book.shelf_id = default_shelf.id
+            book.shelf_rank = rank
+            book.title = book_data["title"]
+            book.author = book_data["author"]
+            book.genre = book_data["genre"]
+            book.kdc = book_data["kdc"]
+            book.subject = book_data["subject"]
+            book.publisher = book_data["publisher"]
+            book.published_date = book_data["published_date"]
+            book.cover_url = book_data["cover_url"]
+            book.total_pages = book_data["total_pages"]
+            book.current_page = book_data["current_page"]
+            book.reading_status = book_data["reading_status"]
+            book.completed_at = completed_at_val
+        else:
+            book = LibraryBook(
+                member_id=member_id,
+                shelf_id=default_shelf.id,
+                shelf_rank=rank,
+                title=book_data["title"],
+                author=book_data["author"],
+                isbn=isbn,
+                genre=book_data["genre"],
+                kdc=book_data["kdc"],
+                subject=book_data["subject"],
+                publisher=book_data["publisher"],
+                published_date=book_data["published_date"],
+                cover_url=book_data["cover_url"],
+                total_pages=book_data["total_pages"],
+                current_page=book_data["current_page"],
+                reading_status=book_data["reading_status"],
+                completed_at=completed_at_val,
             )
-            book = (await db.execute(existing_book_stmt)).scalars().first()
+            db.add(book)
 
-            if book:
-                book.deleted_at = None
-                book.shelf_id = default_shelf.id
-                book.shelf_rank = rank
-                book.title = book_data["title"]
-                book.author = book_data["author"]
-                book.genre = book_data["genre"]
-                book.kdc = book_data["kdc"]
-                book.subject = book_data["subject"]
-                book.publisher = book_data["publisher"]
-                book.published_date = book_data["published_date"]
-                book.cover_url = book_data["cover_url"]
-                book.total_pages = book_data["total_pages"]
-                book.current_page = book_data["current_page"]
-                book.reading_status = book_data["reading_status"]
-                book.completed_at = completed_at_val
-            else:
-                book = LibraryBook(
-                    member_id=member_id,
-                    shelf_id=default_shelf.id,
-                    shelf_rank=rank,
-                    title=book_data["title"],
-                    author=book_data["author"],
-                    isbn=isbn,
-                    genre=book_data["genre"],
-                    kdc=book_data["kdc"],
-                    subject=book_data["subject"],
-                    publisher=book_data["publisher"],
-                    published_date=book_data["published_date"],
-                    cover_url=book_data["cover_url"],
-                    total_pages=book_data["total_pages"],
-                    current_page=book_data["current_page"],
-                    reading_status=book_data["reading_status"],
-                    completed_at=completed_at_val,
-                )
-                db.add(book)
+        await db.flush()
+        created_books.append(book)
 
-            await db.flush()
-            created_books.append(book)
+        # 5. 스크랩 문장 및 감상기록 생성
+        # 게스트의 경우 스크랩 이미지 URL을 빈 문자열 ""로 설정하여 DB 용량 방어
+        scrap_image = "" if is_guest else (book.cover_url or "")
 
-            # 5. 스크랩 문장 및 감상기록 생성 (과거 11권만 생성, created_at 분산)
-            for scrap_item in book_data["scraps"]:
-                # 스크랩 및 감상기록 일시는 완독일 직전 또는 최근 며칠 전으로 분산 (이번 달 범위 내)
-                ref_time = completed_at_val or now_utc
-                target_created_at = max(
-                    ref_time - timedelta(hours=random.randint(1, 36)),
-                    month_start_utc + timedelta(hours=1),
-                )
+        for scrap_item in book_data["scraps"]:
+            ref_time = completed_at_val or now_utc
+            target_created_at = max(
+                ref_time - timedelta(hours=random.randint(1, 36)),
+                month_start_utc + timedelta(hours=1),
+            )
 
-                dup_core_scrap = (
-                    (
-                        await db.execute(
-                            select(Scrap).where(
-                                Scrap.book_id == book.id,
-                                Scrap.sentence == scrap_item["sentence"],
-                                Scrap.deleted_at.is_(None),
-                            )
+            dup_core_scrap = (
+                (
+                    await db.execute(
+                        select(Scrap).where(
+                            Scrap.book_id == book.id,
+                            Scrap.sentence == scrap_item["sentence"],
+                            Scrap.deleted_at.is_(None),
                         )
                     )
-                    .scalars()
-                    .first()
                 )
+                .scalars()
+                .first()
+            )
 
-                if not dup_core_scrap:
-                    core_scrap = Scrap(
-                        book_id=book.id,
-                        sentence=scrap_item["sentence"],
-                        page_number=scrap_item["page_number"],
-                        scrap_image_url=book.cover_url or "",
-                        memo=scrap_item["memo"],
-                        created_at=target_created_at,
-                    )
-                    db.add(core_scrap)
+            if not dup_core_scrap:
+                core_scrap = Scrap(
+                    book_id=book.id,
+                    sentence=scrap_item["sentence"],
+                    page_number=scrap_item["page_number"],
+                    scrap_image_url=scrap_image,
+                    memo=scrap_item["memo"],
+                    created_at=target_created_at,
+                )
+                db.add(core_scrap)
 
-                dup_rec_scrap = (
-                    (
-                        await db.execute(
-                            select(RecordScrap).where(
-                                RecordScrap.member_id == member_id,
-                                RecordScrap.book_id == book.id,
-                                RecordScrap.sentence == scrap_item["sentence"],
-                                RecordScrap.deleted_at.is_(None),
-                            )
+            dup_rec_scrap = (
+                (
+                    await db.execute(
+                        select(RecordScrap).where(
+                            RecordScrap.member_id == member_id,
+                            RecordScrap.book_id == book.id,
+                            RecordScrap.sentence == scrap_item["sentence"],
+                            RecordScrap.deleted_at.is_(None),
                         )
                     )
-                    .scalars()
-                    .first()
                 )
-
-                if not dup_rec_scrap:
-                    new_rec = Record(
-                        member_id=member_id,
-                        book_id=book.id,
-                        title=f"《{book.title}》 감상",
-                        content=f"{book.title}을(를) 읽으며 가장 마음에 남았던 문장입니다. {scrap_item['memo']}",
-                        rating=5
-                        if book.reading_status == BookReadingStatus.COMPLETED
-                        else 4,
-                        read_at=target_created_at,
-                        weather=random.choice(["clear", "cloudy", "rainy"]),
-                        created_at=target_created_at,
-                    )
-                    db.add(new_rec)
-                    await db.flush()
-
-                    rec_scrap = RecordScrap(
-                        record_id=new_rec.id,
-                        member_id=member_id,
-                        book_id=book.id,
-                        sentence=scrap_item["sentence"],
-                        page_number=scrap_item["page_number"],
-                        scrap_image_url=book.cover_url or "",
-                        memo=scrap_item["memo"],
-                        created_at=target_created_at,
-                    )
-                    db.add(rec_scrap)
-
-        await db.commit()
-        print("-> 16권 도서 및 줄거리 기반 스크랩 문장 적재 완료")
-
-        # 6. 최근 독서 세션 36건 적재 (이번 달 [lo, hi] 범위 내 균등 추첨, 16권 전 도서 고른 분산, KST 시간대 정렬)
-        # 기존 세션 삭제 후 36건 일관성 있게 새로 생성
-        await db.execute(
-            delete(ReadingSession).where(ReadingSession.member_id == member_id)
-        )
-
-        print(
-            "-> 최근 독서 타이머 세션 로그 생성 중 (16권 전권 고른 분산 및 KST 시간대 정렬)..."
-        )
-        weathers = ["clear", "clear", "clear", "cloudy", "rainy"]
-        kst_hours_pool = [5, 6, 10, 14, 16, 19, 20, 22, 23]
-
-        lo = month_start_utc
-        sessions_created = 0
-
-        # 16권 전 도서에 최소 1~2건씩 배정하고 추가 추첨하여 36건 구성
-        session_target_books = list(created_books) * 2 + [
-            random.choice(created_books) for _ in range(4)
-        ]
-        random.shuffle(session_target_books)
-
-        for target_book in session_target_books:
-            hi = min(target_book.completed_at or now_utc, now_utc)
-
-            if hi <= lo:
-                continue
-
-            duration_sec = random.randint(900, 3600)  # 15분 ~ 60분
-            duration_min = duration_sec // 60
-
-            # [lo, hi] 시간 창 안에서 균등하게 KST 시각을 추첨 (최대 50회 시도)
-            for _ in range(50):
-                random_fraction = random.random()
-                sampled_dt = lo + (hi - lo) * random_fraction
-                sampled_kst = sampled_dt.astimezone(SEOUL_TZ)
-
-                chosen_hour = random.choice(kst_hours_pool)
-                chosen_minute = random.randint(0, 45)
-
-                start_kst = sampled_kst.replace(
-                    hour=chosen_hour, minute=chosen_minute, second=0, microsecond=0
-                )
-                start_dt_utc = start_kst.astimezone(UTC)
-                end_dt_utc = start_dt_utc + timedelta(seconds=duration_sec)
-
-                if lo <= start_dt_utc and end_dt_utc <= hi:
-                    break
-            else:
-                continue
-
-            # 세션 페이지 분량 정합성 (도서 현재 진도 범위 고려)
-            max_limit = target_book.current_page or target_book.total_pages or 200
-            start_p = max(1, random.randint(1, max(1, max_limit - 20)))
-            end_p = min(start_p + random.randint(10, 35), max_limit)
-
-            session = ReadingSession(
-                member_id=member_id,
-                book_id=target_book.id,
-                duration_seconds=duration_sec,
-                duration_minutes=duration_min,
-                start_time=start_dt_utc,
-                end_time=end_dt_utc,
-                start_page=start_p,
-                end_page=end_p,
-                weather=random.choice(weathers),
-                memo=f"집중해서 읽음 ({target_book.title})",
-                created_at=end_dt_utc,
+                .scalars()
+                .first()
             )
-            db.add(session)
-            sessions_created += 1
 
-        await db.commit()
-        print(
-            f"-> 독서 세션 로그 {sessions_created}개 적재 완료 (16권 전 도서 분산 및 KST 시간대 정렬)!"
+            if not dup_rec_scrap:
+                new_rec = Record(
+                    member_id=member_id,
+                    book_id=book.id,
+                    title=f"《{book.title}》 감상",
+                    content=f"{book.title}을(를) 읽으며 가장 마음에 남았던 문장입니다. {scrap_item['memo']}",
+                    rating=5
+                    if book.reading_status == BookReadingStatus.COMPLETED
+                    else 4,
+                    read_at=target_created_at,
+                    weather=random.choice(["clear", "cloudy", "rainy"]),
+                    created_at=target_created_at,
+                )
+                db.add(new_rec)
+                await db.flush()
+
+                rec_scrap = RecordScrap(
+                    record_id=new_rec.id,
+                    member_id=member_id,
+                    book_id=book.id,
+                    sentence=scrap_item["sentence"],
+                    page_number=scrap_item["page_number"],
+                    scrap_image_url=scrap_image,
+                    memo=scrap_item["memo"],
+                    created_at=target_created_at,
+                )
+                db.add(rec_scrap)
+
+    await db.commit()
+    print(f"-> {len(seed_books)}권 도서 및 스크랩 문장 적재 완료")
+
+    # 6. 최근 독서 세션 적재
+    await db.execute(
+        delete(ReadingSession).where(ReadingSession.member_id == member_id)
+    )
+
+    print(f"-> 최근 독서 타이머 세션 로그 생성 중 ({len(created_books)}권 분산)...")
+    weathers = ["clear", "clear", "clear", "cloudy", "rainy"]
+    kst_hours_pool = [5, 6, 10, 14, 16, 19, 20, 22, 23]
+
+    lo = month_start_utc
+    sessions_created = 0
+
+    session_target_books = list(created_books) * 2 + [
+        random.choice(created_books) for _ in range(max(2, len(created_books) // 4))
+    ]
+    random.shuffle(session_target_books)
+
+    for target_book in session_target_books:
+        hi = min(target_book.completed_at or now_utc, now_utc)
+
+        if hi <= lo:
+            continue
+
+        duration_sec = random.randint(900, 3600)
+        duration_min = duration_sec // 60
+
+        for _ in range(50):
+            random_fraction = random.random()
+            sampled_dt = lo + (hi - lo) * random_fraction
+            sampled_kst = sampled_dt.astimezone(SEOUL_TZ)
+
+            chosen_hour = random.choice(kst_hours_pool)
+            chosen_minute = random.randint(0, 45)
+
+            start_kst = sampled_kst.replace(
+                hour=chosen_hour, minute=chosen_minute, second=0, microsecond=0
+            )
+            start_dt_utc = start_kst.astimezone(UTC)
+            end_dt_utc = start_dt_utc + timedelta(seconds=duration_sec)
+
+            if lo <= start_dt_utc and end_dt_utc <= hi:
+                break
+        else:
+            continue
+
+        max_limit = target_book.current_page or target_book.total_pages or 200
+        start_p = max(1, random.randint(1, max(1, max_limit - 20)))
+        end_p = min(start_p + random.randint(10, 35), max_limit)
+
+        session = ReadingSession(
+            member_id=member_id,
+            book_id=target_book.id,
+            duration_seconds=duration_sec,
+            duration_minutes=duration_min,
+            start_time=start_dt_utc,
+            end_time=end_dt_utc,
+            start_page=start_p,
+            end_page=end_p,
+            weather=random.choice(weathers),
+            memo=f"집중해서 읽음 ({target_book.title})",
+            created_at=end_dt_utc,
         )
+        db.add(session)
+        sessions_created += 1
 
-        # 7. 사서와의 토론 통찰(Debate Insights) 페르소나 4종 풀세트 벡터 임베딩 및 적재
+    await db.commit()
+    print(f"-> 독서 세션 로그 {sessions_created}개 적재 완료!")
+
+    # 7. 사서와의 토론 통찰(Debate Insights) (데모 계정만 적재하여 시연용 AI 분석 보장)
+    if not is_guest:
         print(
             "-> 사서와의 토론 통찰(Debate Insights) 페르소나 4종 5건 벡터 임베딩 및 적재 중..."
         )
@@ -460,7 +453,6 @@ async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) ->
             async with (
                 db.begin_nested()
             ):  # SAVEPOINT: 실패해도 앞선 세션/도서 트랜잭션 오염 방지
-                # 재실행 시 중복 적재 방지 (해당 데모 세션 삭제)
                 await db.execute(
                     text(
                         "DELETE FROM agent.debate_insights "
@@ -472,7 +464,6 @@ async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) ->
                 for d_item in sample_debates:
                     full_text = f"도서: {d_item['book_title']}\n논제: {d_item['topic']}\n토론 요약: {d_item['summary']}"
                     vec = generate_pseudo_embedding(full_text)
-                    # pgvector 포맷 문자열
                     vec_str = "[" + ",".join(str(v) for v in vec) + "]"
                     d_id = uuid.uuid4()
                     sess_id = (
@@ -502,17 +493,47 @@ async def seed_demo_library(auto_yes: bool = False, reset_mode: bool = False) ->
                         },
                     )
             await db.commit()
-            print(
-                "-> 토론 통찰(Debate Insights) 페르소나 4종 5건 적재 완료 (리포트 토론 키워드 추출 1순위 및 AI 개인화 완결)!"
-            )
+            print("-> 토론 통찰(Debate Insights) 페르소나 4종 5건 적재 완료!")
         except Exception as e:
             print(f"참고: agent.debate_insights 적재 건너뜀 ({e})")
 
-        print(f"\n🎉 [{TARGET_EMAIL}] 데모 데이터 준비 완료!")
+    print(f"\n🎉 [{email}] {label} 데이터 준비 완료!")
+
+
+async def run_seed(
+    target: str = "all", auto_yes: bool = False, reset_mode: bool = False
+) -> None:
+    random.seed(42)
+    check_db_guard(auto_yes, target_desc=target)
+
+    async with AsyncSessionLocal() as db:
+        if target in ("demo", "all"):
+            await seed_account(
+                db,
+                DEMO_TARGET_EMAIL,
+                DEMO_SEED_BOOKS,
+                reset_mode=reset_mode,
+                is_guest=False,
+            )
+        if target in ("guest", "all"):
+            await seed_account(
+                db,
+                GUEST_TARGET_EMAIL,
+                GUEST_SEED_BOOKS,
+                reset_mode=reset_mode,
+                is_guest=True,
+            )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="데모 계정 서재 시드 스크립트")
+    parser = argparse.ArgumentParser(description="데모/게스트 계정 서재 시드 스크립트")
+    parser.add_argument(
+        "--target",
+        "-t",
+        choices=["all", "demo", "guest"],
+        default="all",
+        help="시드 대상 (all: 전체, demo: dpyb26 16권, guest: 게스트 9권)",
+    )
     parser.add_argument(
         "--yes", "-y", action="store_true", help="대상 DB 확인 프롬프트 자동 통과"
     )
@@ -524,4 +545,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    asyncio.run(seed_demo_library(auto_yes=args.yes, reset_mode=args.reset))
+    asyncio.run(
+        run_seed(
+            target=args.target,
+            auto_yes=args.yes,
+            reset_mode=args.reset,
+        )
+    )

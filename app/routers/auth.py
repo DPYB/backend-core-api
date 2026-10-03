@@ -95,8 +95,8 @@ async def issue_guest_token(
         )
         clean_guest_id = str(uuid.uuid4())
 
-    # 데모 회원(기본책장, 대표사서 등) 존재 보장
-    await MemberService.ensure_demo_member(db)
+    # 공용 게스트 회원(기본책장, 대표사서, 초기 시드 9권 등) 존재 보장
+    await MemberService.ensure_guest_member(db)
 
     # 게스트 JWT 생성 (1~2시간 만료)
     access_token = create_guest_token(clean_guest_id)

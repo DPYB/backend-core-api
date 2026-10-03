@@ -44,8 +44,8 @@ class ScrapService:
                 "해당 도서에 대한 접근 권한이 없습니다."
             )
 
-        # 데모 계정 도서당 스크랩 쿼터(상한) 검증
-        if str(member_id) == settings.DEMO_MEMBER_ID:
+        # 데모 및 게스트 계정 도서당 스크랩 쿼터(상한) 검증
+        if str(member_id) in (settings.DEMO_MEMBER_ID, settings.GUEST_MEMBER_ID):
             active_scraps_count_stmt = select(func.count(Scrap.id)).where(
                 Scrap.book_id == book_id,
                 Scrap.deleted_at.is_(None),
@@ -55,14 +55,21 @@ class ScrapService:
             ).scalar() or 0
             if active_scraps_count >= settings.DEMO_MAX_SCRAPS_PER_BOOK:
                 raise DemoQuotaExceededException(
-                    f"데모 계정의 도서당 최대 스크랩 수({settings.DEMO_MAX_SCRAPS_PER_BOOK}개)를 초과할 수 없습니다."
+                    f"체험 및 데모 계정의 도서당 최대 스크랩 수({settings.DEMO_MAX_SCRAPS_PER_BOOK}개)를 초과할 수 없습니다."
                 )
+
+        # 게스트 체험 모드인 경우 악성 이미지/DB 용량 팽창 방지를 위해 빈 문자열로 정제
+        final_image_url = (
+            ""
+            if str(member_id) == settings.GUEST_MEMBER_ID
+            else (req.scrap_image_url or "")
+        )
 
         scrap = Scrap(
             book_id=book_id,
             sentence=req.sentence,
             page_number=req.page_number,
-            scrap_image_url=req.scrap_image_url,
+            scrap_image_url=final_image_url,
             memo=req.memo.strip() if req.memo else None,
         )
         db.add(scrap)
@@ -193,7 +200,10 @@ class ScrapService:
 
         scrap.sentence = req.sentence
         scrap.page_number = req.page_number
-        scrap.scrap_image_url = req.scrap_image_url
+        if str(member_id) == settings.GUEST_MEMBER_ID:
+            scrap.scrap_image_url = ""
+        elif req.scrap_image_url is not None:
+            scrap.scrap_image_url = req.scrap_image_url
         scrap.memo = req.memo.strip() if req.memo else None
 
         await db.commit()

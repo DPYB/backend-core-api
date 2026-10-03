@@ -395,3 +395,10 @@ DEMO_SEED_ISBNS: set[str] = {b["isbn"] for b in DEMO_SEED_BOOKS}
 DEMO_SEED_BOOKS_BY_ISBN: dict[str, dict[str, Any]] = {
     b["isbn"]: b for b in DEMO_SEED_BOOKS
 }
+
+# 체험 모드(게스트)용 축소 시드 도서 (9권 제공 -> 25권 상한 중 16권의 등록 여유 슬롯 확보)
+GUEST_SEED_BOOKS: list[dict[str, Any]] = DEMO_SEED_BOOKS[:9]
+GUEST_SEED_ISBNS: set[str] = {b["isbn"] for b in GUEST_SEED_BOOKS}
+GUEST_SEED_BOOKS_BY_ISBN: dict[str, dict[str, Any]] = {
+    b["isbn"]: b for b in GUEST_SEED_BOOKS
+}

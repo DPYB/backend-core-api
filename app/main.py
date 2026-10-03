@@ -126,6 +126,45 @@ def create_app() -> FastAPI:
         ("POST", "/api/v1/auth/refresh"),
     }
 
+    # 게스트 계정(GUEST_MEMBER_ID) 허용 쓰기 라우트 템플릿 (대표사서 변경 제외, 도서/스크랩 삭제 포함)
+    guest_allowed_write_routes = {
+        ("POST", "/api/v1/library/books"),
+        ("PATCH", "/api/v1/library/books/{book_id}"),
+        ("PATCH", "/api/v1/library/books/{book_id}/progress"),
+        ("PATCH", "/api/v1/library/books/{book_id}/order"),
+        ("PATCH", "/api/v1/library/books/{book_id}/shelf"),
+        ("DELETE", "/api/v1/library/books/{book_id}"),
+        ("POST", "/api/v1/library/books/{book_id}/scraps"),
+        ("PATCH", "/api/v1/library/scraps/{scrap_id}"),
+        ("DELETE", "/api/v1/library/scraps/{scrap_id}"),
+        ("POST", "/api/v1/reading-sessions"),
+        ("POST", "/api/v1/books/{book_id}/reading-sessions"),
+        ("POST", "/api/v1/library/books/{book_id}/reading-sessions"),
+        ("POST", "/api/v1/records"),
+        ("POST", "/api/v1/auth/logout"),
+        ("POST", "/api/v1/auth/refresh"),
+    }
+
+    def _matches_route_template(
+        req: Request, allowed_routes: set[tuple[str, str]]
+    ) -> bool:
+        for route in req.app.routes:
+            match, _ = route.matches(req.scope)
+            if match.name == "FULL":
+                if (
+                    hasattr(route, "path")
+                    and (req.method, getattr(route, "path")) in allowed_routes
+                ):
+                    return True
+                if hasattr(route, "effective_candidates"):
+                    for cand in route.effective_candidates():
+                        cand_match, _ = cand.matches(req.scope)
+                        if cand_match.name == "FULL":
+                            cand_path = getattr(cand, "path", None)
+                            if (req.method, cand_path) in allowed_routes:
+                                return True
+        return False
+
     @app.middleware("http")
     async def account_security_middleware(request: Request, call_next):
         # GET, HEAD, OPTIONS는 모든 사용자 및 게스트에게 항상 허용
@@ -143,48 +182,42 @@ def create_app() -> FastAPI:
             try:
                 payload = decode_jwt_token(token)
                 sub_raw = str(payload.get("sub") or "")
+                is_guest = (
+                    payload.get("role") == "guest"
+                    or sub_raw.startswith("guest-")
+                    or sub_raw == settings.GUEST_MEMBER_ID
+                )
 
-                # 1. 게스트 토큰 (Read-Only) 차단
-                if payload.get("role") == "guest" or sub_raw.startswith("guest-"):
-                    return JSONResponse(
-                        status_code=403,
-                        content={
-                            "code": "GUEST_READONLY_MODE",
-                            "message": "체험 모드(게스트)에서는 읽기 전용으로만 이용 가능합니다. 변경 작업을 수행하려면 로그인해 주세요.",
-                        },
-                    )
+                # 1. 게스트 토큰 쓰기 검증
+                if is_guest:
+                    # 긴급 킬스위치 또는 쓰기 비활성화 시 즉시 읽기 전용 403 차단
+                    if not settings.ENABLE_GUEST_WRITE:
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "code": "GUEST_READONLY_MODE",
+                                "message": "체험 모드(게스트)에서는 읽기 전용으로만 이용 가능합니다. 변경 작업을 수행하려면 로그인해 주세요.",
+                            },
+                        )
+
+                    # Allowlist 검증
+                    if not _matches_route_template(request, guest_allowed_write_routes):
+                        logger.warning(
+                            "Guest attempted unauthorized mutation: %s %s",
+                            request.method,
+                            request.url.path,
+                        )
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "code": "GUEST_ACCOUNT_PROTECTED",
+                                "message": "체험 모드(게스트) 보호 정책에 의해 허용되지 않는 변경 작업입니다.",
+                            },
+                        )
 
                 # 2. 공개 데모 계정 (DEMO_MEMBER_ID) 쓰기 허용 목록(Allowlist) 가드
-                if sub_raw == settings.DEMO_MEMBER_ID:
-                    # FastAPI 라우트 템플릿 매칭 검사
-                    matched = False
-                    for route in request.app.routes:
-                        match, _ = route.matches(request.scope)
-                        if match.name == "FULL":
-                            # 1) 일반 Route 인 경우
-                            if (
-                                hasattr(route, "path")
-                                and (request.method, getattr(route, "path"))
-                                in demo_allowed_write_routes
-                            ):
-                                matched = True
-                                break
-                            # 2) APIRouter include(_IncludedRouter) 된 하위 후보군 탐색
-                            if hasattr(route, "effective_candidates"):
-                                for cand in route.effective_candidates():
-                                    cand_match, _ = cand.matches(request.scope)
-                                    if cand_match.name == "FULL":
-                                        cand_path = getattr(cand, "path", None)
-                                        if (
-                                            request.method,
-                                            cand_path,
-                                        ) in demo_allowed_write_routes:
-                                            matched = True
-                                            break
-                            if matched:
-                                break
-
-                    if not matched:
+                elif sub_raw == settings.DEMO_MEMBER_ID:
+                    if not _matches_route_template(request, demo_allowed_write_routes):
                         logger.warning(
                             "Demo account attempted unauthorized mutation: %s %s",
                             request.method,
