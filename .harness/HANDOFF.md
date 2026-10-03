@@ -1,5 +1,25 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-03: 데모 계정(dpyb@gmail.com) 복구, 로그인 자동 가입 제거(Phase 49) 및 PR #36 검증 통과
+- **배경**:
+  - 공모전 제출용 공식 데모 이메일이 `dpyb@gmail.com`으로 확정됨에 따라 기존 찌꺼기 계정 정리, 약관 동의 이력 보장, PBKDF2 해시값(`Test!123`) 갱신으로 로그인 복구 완료.
+  - 로그인 엔드포인트(`POST /api/v1/auth/login`)에 남아있던 개발 편의용 미등록 회원 자동 가입(Get-or-Create) 로직을 보안상 완전히 제거하고 404 차단 적용.
+  - 게스트 쓰기 개방 및 Allowlist 작업(Phase 48)과 로그인 보안 강화(Phase 49)를 반영한 PR #36 생성 및 CI/Lint 전수 통과.
+- **수행 내용**:
+  1. **Supabase 운영 DB 정돈**:
+     - `member.members`: 1번 데모 계정(`dpyb@gmail.com`, 비밀번호 `Test!123`, 약관 동의 완료, 백지 서재), 2번 게스트 계정(`guest-trial@dontpawget.app`) 2개 계정으로 클린업.
+  2. **Phase 49 로그인 보안 강화 (`app/routers/auth.py`)**:
+     - `POST /api/v1/auth/login`에서 미등록 회원은 404 `MEMBER_NOT_FOUND` ("가입되지 않은 이메일입니다.") 반환.
+     - 관련 단위 테스트 갱신 및 신설 (`test_login_unregistered_member_returns_404`, `test_login_and_cookie_for_existing_member`).
+  3. **PR #36 생성 및 CI/Lint 무결점 통과**:
+     - [PR #36 feat[guest]: 게스트 공용 체험 모드 분리 및 안전한 쓰기 체계 구축](https://github.com/DPYB/backend-core-api/pull/36) 생성.
+     - PR 본문 Type B 컨벤션 규격 정렬 및 `pyproject.toml` 기본 `addopts`에 `-m "not integration"` 적용으로 CI 러너의 인메모리 SQLite 격리 이슈 예방.
+     - CI (123개 단위 테스트, Ruff, Mypy) 및 Lint PR 워크플로우 100% 초록불(Success) 달성.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **PR #36 Human Checkpoint 머지**: 사람이 GitHub에서 PR #36을 `develop` 브랜치로 최종 머지 확인.
+  2. **게스트 스타터 가이드북 도서 세팅**: 팀원과 자체 기획/제작 완료한 스타터 가이드북(1권) 메타데이터(제목, 표지 URL, 스크랩 문구 등)를 `app/services/demo_seed_data.py`의 `GUEST_SEED_BOOKS`에 1권 전용 시드로 등록.
+  3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**: Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용으로 실제 사용자 게스트 체험 모드 오픈.
+
 ## 2026-10-02: 게스트 공용 체험 모드 분리(GUEST_MEMBER_ID) 및 안전한 쓰기 개방 체계 구축
 - **배경**:
   - 해커톤 심사 및 사용자 유입 시 발표용 계정(`DEMO_MEMBER_ID`, `dpyb26`)과 게스트(`POST /guest`)가 동일한 ID를 공유하여 발생하던 시연 서재 오염 위험을 원천 배제.
