@@ -306,24 +306,24 @@ async def dev_login(
     res = await db.execute(stmt)
     existing_member = res.scalars().first()
 
-    if existing_member:
-        if existing_member.status == "PENDING_VERIFICATION":
+    if not existing_member:
+        raise AppException(404, "MEMBER_NOT_FOUND", "가입되지 않은 이메일입니다.")
+
+    if existing_member.status == "PENDING_VERIFICATION":
+        raise AppException(
+            403,
+            "EMAIL_NOT_VERIFIED",
+            "이메일 인증이 완료되지 않았습니다. 메일함의 인증 코드를 확인해 주세요.",
+        )
+    if existing_member.password_hash and req.password:
+        if not verify_password(req.password, existing_member.password_hash):
             raise AppException(
-                403,
-                "EMAIL_NOT_VERIFIED",
-                "이메일 인증이 완료되지 않았습니다. 메일함의 인증 코드를 확인해 주세요.",
+                401,
+                "INVALID_CREDENTIALS",
+                "이메일 또는 비밀번호가 올바르지 않습니다.",
             )
-        if existing_member.password_hash and req.password:
-            if not verify_password(req.password, existing_member.password_hash):
-                raise AppException(
-                    401,
-                    "INVALID_CREDENTIALS",
-                    "이메일 또는 비밀번호가 올바르지 않습니다.",
-                )
-        member = existing_member
-        is_new = False
-    else:
-        member, is_new = await MemberService.get_or_create_dev_member(db, req.email)
+    member = existing_member
+    is_new = False
 
     access_token = create_access_token(member.member_id, member.email, member.nickname)
     refresh_token = create_refresh_token(member.member_id)

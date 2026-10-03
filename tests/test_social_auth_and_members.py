@@ -7,7 +7,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
-from app.models.librarian import Librarian
 from app.models.library_book import LibraryBook
 from app.models.member import Member
 from app.models.record import Record
@@ -267,10 +266,28 @@ async def test_profile_and_withdrawal_cascade(
 
 
 @pytest.mark.asyncio
-async def test_dev_login_auto_signup_and_cookie(
+async def test_login_unregistered_member_returns_404(client: AsyncClient):
+    """가입되지 않은 이메일로 로그인 시도 시 404 MEMBER_NOT_FOUND 차단 검증"""
+    resp = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "nonexistent@example.com", "password": "anypassword"},
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "MEMBER_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_login_and_cookie_for_existing_member(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """개발/프론트 호환 로그인 시 자동 가입, 기본책장/고양이 사서 지급 및 쿠키 발급 검증"""
+    """정상 가입된 회원의 로그인, 세션 쿠키 발급 및 프로필 응답 검증"""
+    from app.services.member_service import MemberService
+
+    member, _ = await MemberService.get_or_create_dev_member(
+        db_session, "frontend_dev@example.com"
+    )
+    member_id = member.member_id
+
     resp = await client.post(
         "/api/v1/auth/login",
         json={"email": "frontend_dev@example.com", "password": "anypassword"},
@@ -284,7 +301,7 @@ async def test_dev_login_auto_signup_and_cookie(
     assert data["refreshToken"] is not None
     assert data["refresh_token"] == data["refreshToken"]
     assert data["tokenType"] == "Bearer"
-    assert data["isNewMember"] is True
+    assert data["isNewMember"] is False
 
     # member 프로필 필드 포함 확인 (프론트 AuthProvider 연동)
     assert "member" in data
@@ -295,40 +312,16 @@ async def test_dev_login_auto_signup_and_cookie(
     assert "set-cookie" in resp.headers
     assert "refresh_token=" in resp.headers["set-cookie"]
     assert "HttpOnly" in resp.headers["set-cookie"]
-
-    member_id = uuid.UUID(data["memberId"])
-
-    # DB 검증: 기본 책장 생성 확인
-    stmt_shelf = select(Shelf).where(
-        Shelf.member_id == member_id, Shelf.is_default.is_(True)
-    )
-    shelf = (await db_session.execute(stmt_shelf)).scalars().first()
-    assert shelf is not None
-    assert shelf.is_default is True
-
-    # DB 검증: 기본 대표 고양이 사서(CAT) 자동 생성 확인
-    stmt_lib = select(Librarian).where(
-        Librarian.member_id == member_id, Librarian.is_representative.is_(True)
-    )
-    lib = (await db_session.execute(stmt_lib)).scalars().first()
-    assert lib is not None
-    assert lib.name == "블루"
-    assert lib.level == 1
-
-    # 동일 이메일 재로그인 시 기존 회원 조회 (isNewMember = False)
-    resp2 = await client.post(
-        "/api/v1/auth/login",
-        json={"email": "frontend_dev@example.com", "password": "anypassword"},
-    )
-    assert resp2.status_code == 200
-    data2 = resp2.json()
-    assert data2["isNewMember"] is False
-    assert data2["memberId"] == str(member_id)
+    assert data["memberId"] == str(member_id)
 
 
 @pytest.mark.asyncio
 async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSession):
     """쿠키(HttpOnly)로 전달된 refresh_token을 이용한 세션 갱신 검증"""
+    from app.services.member_service import MemberService
+
+    await MemberService.get_or_create_dev_member(db_session, "cookie_user@example.com")
+
     login_resp = await client.post(
         "/api/v1/auth/login",
         json={"email": "cookie_user@example.com"},
@@ -353,11 +346,13 @@ async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSe
 
 @pytest.mark.asyncio
 async def test_refresh_token_cookie_samesite_in_production(
-    client: AsyncClient, monkeypatch
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
 ):
     """프로덕션 환경에서 SameSite=None 및 Secure=True 쿠키 발급 검증"""
     from app.config import settings
+    from app.services.member_service import MemberService
 
+    await MemberService.get_or_create_dev_member(db_session, "prod_cookie@example.com")
     monkeypatch.setattr(settings, "ENV", "production")
 
     login_resp = await client.post(
