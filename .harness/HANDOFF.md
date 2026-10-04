@@ -1,6 +1,31 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
-## 2026-10-02: 게스트 공용 체험 모드 분리(GUEST_MEMBER_ID) 및 안전한 쓰기 개방 체계 구축
+## 2026-10-05: 마이페이지 독서 캘린더 월별 활동 단일 최적화 API 신설 및 프론트엔드 연동
+- **배경**:
+  - 프론트엔드 최신 마이페이지에 독서 캘린더 UI(`MyPageReadingCalendar.jsx`)가 추가되었으나, 서재 내 모든 책에 대해 도서별 API 3종(`fetchReadingSessions`, `listScrapsPage`, `fetchReadingRecords`)을 `Promise.all`로 병렬 호출(N+1 폭탄 요청, 책 15권 기준 45회 이상 요청)하여 렌더링 지연 및 서버 부하를 유발함.
+  - 특정 연/월에 해당하는 회원의 독서 활동(세션, 스크랩, 감상기록, 도서 등록)을 단 한 번에 조회하는 단일 최적화 API 신설 및 프론트엔드 연동 요청.
+- **구현 및 변경 사항**:
+  1. **DTO 스키마 정의 (`app/schemas/reading_session.py`)**:
+     - `ReadingCalendarActivityItem`: `id`, `date`(KST 기준 `YYYY-MM-DD`), `type`(`TIMER_SESSION`, `SENTENCE_SCRAP`, `READING_RECORD`, `BOOK_REGISTERED`), `title`, `desc`, `memo`, `book_id`, `book_title`, `book_cover_url`, `duration_seconds`, `page_number`, `weather`, `created_at`.
+     - `ReadingCalendarResponse`: `year`, `month`, `activities: list[ReadingCalendarActivityItem]` (CamelModel 상속으로 카멜/스네이크 호환).
+  2. **DB 단일 쿼리 최적화 및 타임존 보정 (`app/services/reading_session_service.py`)**:
+     - `get_monthly_calendar`: KST(UTC+9) 기준 월초(`00:00:00+09:00`) ~ 월말(`다음달 1일 00:00:00+09:00`)을 UTC 시각 범위로 변환하여 쿼리함으로써 월초/월말 활동 잘림 오차 원천 방지.
+     - `record.reading_sessions` (`idx_reading_sessions_member_month` 인덱스 활용), `core.scrap` (`core.library_book`과 JOIN), `record.records`, `core.library_book`을 해당 월 범위로 병렬/순차 추출.
+     - 도서 메타데이터(도서명, 표지 URL 등)는 `LibraryBook.id.in_(referenced_book_ids)` 배치 맵으로 매핑하여 N+1 차단.
+     - 활동들을 발생 일시(`created_at` 내림차순) 정렬 반환.
+  3. **엔드포인트 신설 (`app/routers/reading_sessions.py`)**:
+     - `GET /api/v1/reading-sessions/calendar?year={year}&month={month}` (`year`: ge=2020, le=2100 / `month`: ge=1, le=12 / 인증: `Depends(get_current_member_id)`).
+  4. **백엔드 단위/통합 테스트 (`tests/test_reading_sessions.py`)**:
+     - `test_get_reading_calendar_monthly_activities` 추가: 10월 등록 도서, 세션, 스크랩, 감상문 4종 통합 검증, 9월 데이터 격리 필터링 검증, 타인 데이터 접근 차단 격리 검증 통과.
+  5. **프론트엔드 API 및 컴포넌트 최적화 (`frontend-reader-web`)**:
+     - `app/api/recordApi.js`: `fetchMonthlyCalendar(year, month)` export 함수 추가.
+     - `app/features/mypage/MyPageReadingCalendar.jsx`:
+       - 기존 `books.map(...)` 3종 병렬 루프(N+1 폭탄 요청) 전면 제거.
+       - `currentYear`, `currentMonth` 변경 시 `fetchMonthlyCalendar(currentYear, currentMonth)` 1회만 호출하여 `activitiesByDate` 갱신.
+       - 프론트엔드 렌더링에 필요한 `book` 객체 매핑, 활동별 뱃지 스타일/아이콘/라벨 완벽 호환 보장.
+  6. **계층형 품질 검증**:
+     - 백엔드 Tier 2: `uv run ruff format --check .` (110개 파일 통과), `uv run ruff check .` (0 에러), `uv run mypy .` (100개 파일 무결점), `uv run pytest -m "not integration" -x` (총 124개 테스트 100% 통과, 17.30s).
+     - 프론트엔드: `npm run build` (Vite 8.2.2 번들링 에러 없이 481ms 성공).
 - **배경**:
   - 해커톤 심사 및 사용자 유입 시 발표용 계정(`DEMO_MEMBER_ID`, `dpyb26`)과 게스트(`POST /guest`)가 동일한 ID를 공유하여 발생하던 시연 서재 오염 위험을 원천 배제.
   - 게스트에게 도서/스크랩 등록, 진도율 변경, 독서 세션 등 핵심 쓰기 기능을 Allowlist 기반으로 안전하게 개방하여 $0 무과금 인프라를 지키면서도 적극적인 서비스 체험 지원 ("방안 1 변형" 채택).
