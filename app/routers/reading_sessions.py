@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_member_id
@@ -8,11 +8,27 @@ from app.db.session import get_db
 from app.schemas.reading_session import (
     BookReadingSessionListResponse,
     CreateReadingSessionRequest,
+    ReadingCalendarResponse,
     ReadingSessionResponse,
 )
 from app.services.reading_session_service import ReadingSessionService
 
 router = APIRouter(tags=["reading-sessions"])
+
+
+@router.get(
+    "/api/v1/reading-sessions/calendar",
+    response_model=ReadingCalendarResponse,
+    status_code=status.HTTP_200_OK,
+    summary="회원의 특정 연/월 독서 활동(세션, 스크랩, 감상문, 도서등록) 통합 캘린더 조회",
+)
+async def get_reading_calendar(
+    year: int = Query(..., ge=2020, le=2100, description="조회 연도 (예: 2026)"),
+    month: int = Query(..., ge=1, le=12, description="조회 월 (1~12)"),
+    member_id: uuid.UUID = Depends(get_current_member_id),
+    db: AsyncSession = Depends(get_db),
+):
+    return await ReadingSessionService.get_monthly_calendar(db, member_id, year, month)
 
 
 @router.post(

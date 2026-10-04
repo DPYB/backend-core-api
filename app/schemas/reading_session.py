@@ -94,3 +94,31 @@ class BookReadingSessionListResponse(CamelModel):
     sessions: list[ReadingSessionResponse] = Field(
         description="독서 세션 목록 (최신순)"
     )
+
+
+class ReadingCalendarActivityItem(CamelModel):
+    id: str = Field(description="고유 활동 식별자 (예: session-12, scrap-5)")
+    date: str = Field(description="활동 일자 (YYYY-MM-DD)")
+    type: str = Field(
+        description="활동 유형 (TIMER_SESSION, SENTENCE_SCRAP, READING_RECORD, BOOK_REGISTERED)"
+    )
+    title: str = Field(description="활동 요약 제목")
+    desc: str | None = Field(default=None, description="상세 설명 또는 본문 요약")
+    memo: str | None = Field(default=None, description="메모 또는 감상평")
+    book_id: int | None = Field(default=None, description="관련 도서 ID")
+    book_title: str | None = Field(default=None, description="관련 도서명")
+    book_cover_url: str | None = Field(default=None, description="관련 도서 표지 URL")
+    duration_seconds: int | None = Field(
+        default=None, description="집중 독서 시간 (초)"
+    )
+    page_number: int | None = Field(default=None, description="도달 또는 인용 페이지")
+    weather: str | None = Field(default=None, description="독서 당시 날씨")
+    created_at: datetime = Field(description="활동 생성 시각")
+
+
+class ReadingCalendarResponse(CamelModel):
+    year: int = Field(description="조회 연도")
+    month: int = Field(description="조회 월")
+    activities: list[ReadingCalendarActivityItem] = Field(
+        default_factory=list, description="해당 월의 독서 활동 목록 (최신순)"
+    )

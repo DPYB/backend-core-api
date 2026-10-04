@@ -1,3 +1,5 @@
+from datetime import UTC
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -276,3 +278,145 @@ async def test_create_reading_session_other_member_book(
     get_resp = await client.get(f"/api/v1/books/{book.id}/reading-sessions")
     assert get_resp.status_code == 403
     assert get_resp.json()["code"] == "LIBRARY_BOOK_ACCESS_DENIED"
+
+
+@pytest.mark.asyncio
+async def test_get_reading_calendar_monthly_activities(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """GET /api/v1/reading-sessions/calendar: 세션, 스크랩, 감상문, 도서등록 통합 조회 검증"""
+    from datetime import datetime
+
+    from app.models.reading_session import ReadingSession
+    from app.models.record import Record
+    from app.models.scrap import Scrap
+
+    # 1. 2026-10월에 등록된 책 및 과거 책 준비
+    shelf = Shelf(
+        member_id=TEST_MEMBER_ID,
+        name="기본 책장",
+        is_default=True,
+    )
+    db_session.add(shelf)
+    await db_session.flush()
+
+    # 10월 등록 도서 (KST 10월 4일 10:00 -> UTC 10월 4일 01:00)
+    oct_book = LibraryBook(
+        member_id=TEST_MEMBER_ID,
+        shelf_id=shelf.id,
+        shelf_rank="0|hzzzzz:",
+        title="소년이 온다",
+        author="한강",
+        genre=GenreType.LITERATURE,
+        cover_url="https://example.com/cover1.jpg",
+        total_pages=216,
+        current_page=120,
+        reading_status=BookReadingStatus.READING,
+        created_at=datetime(2026, 10, 4, 1, 0, 0, tzinfo=UTC),
+    )
+    db_session.add(oct_book)
+    await db_session.flush()
+
+    # 2. 독서 세션 (10월 4일)
+    session = ReadingSession(
+        member_id=TEST_MEMBER_ID,
+        book_id=oct_book.id,
+        duration_seconds=2100,
+        duration_minutes=35,
+        start_page=80,
+        end_page=120,
+        memo="35분 집중 독서 기록",
+        weather="clear",
+        created_at=datetime(2026, 10, 4, 6, 30, 0, tzinfo=UTC),  # KST 15:30
+    )
+    db_session.add(session)
+
+    # 3. 문장 스크랩 (10월 4일)
+    scrap = Scrap(
+        book_id=oct_book.id,
+        sentence="네가 죽은 뒤 장례식을 치르지 못해...",
+        page_number=120,
+        scrap_image_url="https://example.com/scrap1.jpg",
+        memo="인상적인 도입부",
+        created_at=datetime(2026, 10, 4, 7, 0, 0, tzinfo=UTC),  # KST 16:00
+    )
+    db_session.add(scrap)
+
+    # 4. 감상 기록 (10월 5일)
+    record = Record(
+        member_id=TEST_MEMBER_ID,
+        book_id=oct_book.id,
+        title="소년이 온다 감상문",
+        content="마음이 먹먹해지는 이야기였습니다.",
+        rating=5,
+        weather="clear",
+        created_at=datetime(2026, 10, 5, 2, 0, 0, tzinfo=UTC),  # KST 11:00
+    )
+    db_session.add(record)
+
+    # 5. 다른 월 (9월) 활동 추가 (10월 조회 시 필터링되어야 함)
+    sep_session = ReadingSession(
+        member_id=TEST_MEMBER_ID,
+        book_id=oct_book.id,
+        duration_seconds=1800,
+        duration_minutes=30,
+        created_at=datetime(2026, 9, 20, 5, 0, 0, tzinfo=UTC),
+    )
+    db_session.add(sep_session)
+
+    # 6. 타인의 활동 추가 (조회되지 않아야 함)
+    other_session = ReadingSession(
+        member_id=OTHER_MEMBER_ID,
+        book_id=None,
+        duration_seconds=1200,
+        duration_minutes=20,
+        created_at=datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC),
+    )
+    db_session.add(other_session)
+
+    await db_session.commit()
+
+    # 7. 2026년 10월 캘린더 조회
+    resp = await client.get("/api/v1/reading-sessions/calendar?year=2026&month=10")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["year"] == 2026
+    assert data["month"] == 10
+    activities = data["activities"]
+
+    # 10월 활동 4건 (감상문, 스크랩, 세션, 도서등록)
+    assert len(activities) == 4
+
+    types = [a["type"] for a in activities]
+    assert "READING_RECORD" in types
+    assert "SENTENCE_SCRAP" in types
+    assert "TIMER_SESSION" in types
+    assert "BOOK_REGISTERED" in types
+
+    # 세션 검증
+    session_item = next(a for a in activities if a["type"] == "TIMER_SESSION")
+    assert session_item["id"] == f"session-{session.id}"
+    assert session_item["date"] == "2026-10-04"
+    assert session_item["bookId"] == oct_book.id
+    assert session_item["bookTitle"] == "소년이 온다"
+    assert session_item["bookCoverUrl"] == "https://example.com/cover1.jpg"
+    assert session_item["durationSeconds"] == 2100
+    assert session_item["weather"] == "clear"
+
+    # 스크랩 검증
+    scrap_item = next(a for a in activities if a["type"] == "SENTENCE_SCRAP")
+    assert scrap_item["id"] == f"scrap-{scrap.id}"
+    assert scrap_item["date"] == "2026-10-04"
+    assert scrap_item["desc"] == "네가 죽은 뒤 장례식을 치르지 못해..."
+    assert scrap_item["memo"] == "인상적인 도입부"
+    assert scrap_item["bookTitle"] == "소년이 온다"
+
+    # 9월 캘린더 조회 검증 (9월 세션 1건만 존재)
+    sep_resp = await client.get("/api/v1/reading-sessions/calendar?year=2026&month=9")
+    assert sep_resp.status_code == 200
+    sep_data = sep_resp.json()
+    assert sep_data["year"] == 2026
+    assert sep_data["month"] == 9
+    assert len(sep_data["activities"]) == 1
+    assert sep_data["activities"][0]["type"] == "TIMER_SESSION"
