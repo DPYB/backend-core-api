@@ -1,10 +1,11 @@
 from datetime import date, datetime
 
-from pydantic import Field, computed_field, model_validator
+from pydantic import Field, computed_field, field_validator, model_validator
 
 from app.core.exceptions import InvalidReorderTargetException
 from app.core.kdc_mapper import (
     GENRE_KOREAN_NAMES,
+    parse_to_date,
     parse_to_genre_and_subject,
 )
 from app.models.enums import BookReadingStatus, GenreType
@@ -25,6 +26,11 @@ class CreateLibraryBookRequest(CamelModel):
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
     shelf_id: int | None = None
+
+    @field_validator("published_date", mode="before")
+    @classmethod
+    def validate_published_date(cls, v: object) -> date | None:
+        return parse_to_date(v)
 
     @model_validator(mode="before")
     @classmethod
@@ -189,6 +195,11 @@ class UpdateLibraryBookRequest(CamelModel):
     cover_url: str | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
+
+    @field_validator("published_date", mode="before")
+    @classmethod
+    def validate_published_date(cls, v: object) -> date | None:
+        return parse_to_date(v)
 
     @model_validator(mode="before")
     @classmethod

@@ -1,8 +1,11 @@
+from datetime import date
+
 from app.core.kdc_mapper import (
     GENRE_KOREAN_NAMES,
     kdc_to_genre,
     parse_page_number,
     parse_publish_date,
+    parse_to_date,
 )
 from app.models.enums import GenreType
 from app.schemas.search import ExternalBook
@@ -291,3 +294,34 @@ def test_display_genre_and_genre_name_prefer_subject():
     assert dump2["subject"] is None
     assert dump2["genreName"] == "문학"
     assert dump2["displayGenre"] == "문학"
+
+
+def test_parse_to_date():
+    # 1. date 인스턴스 그대로 반환
+    d = date(2024, 5, 12)
+    assert parse_to_date(d) == d
+
+    # 2. 8자리 표준 및 비표준 구분자 (YYYYMMDD, YYYY-MM-DD, YYYY.MM.DD, YYYY/MM/DD)
+    assert parse_to_date("2024-05-12") == date(2024, 5, 12)
+    assert parse_to_date("2024.05.12") == date(2024, 5, 12)
+    assert parse_to_date("2024/05/12") == date(2024, 5, 12)
+    assert parse_to_date("20240512") == date(2024, 5, 12)
+
+    # 3. 8자리 중 일자 미상 (20240500) -> 1일로 보정
+    assert parse_to_date("20240500") == date(2024, 5, 1)
+
+    # 4. 6자리 연월 (YYYY-MM, YYYY.MM, YYYYMM) -> 1일로 보정
+    assert parse_to_date("2024-05") == date(2024, 5, 1)
+    assert parse_to_date("2024.05") == date(2024, 5, 1)
+    assert parse_to_date("202405") == date(2024, 5, 1)
+
+    # 5. 4자리 연도 (YYYY) -> 1월 1일로 보정
+    assert parse_to_date("2024") == date(2024, 1, 1)
+    assert parse_to_date("1998") == date(1998, 1, 1)
+
+    # 6. 빈 문자열 / 결측치 / 잘못된 형식 -> None 안전 폴백
+    assert parse_to_date("") is None
+    assert parse_to_date("   ") is None
+    assert parse_to_date(None) is None
+    assert parse_to_date("invalid-date") is None
+    assert parse_to_date("N/A") is None
