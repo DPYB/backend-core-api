@@ -107,15 +107,17 @@ def create_app() -> FastAPI:
     )
 
     # 게스트 체험 모드 무결점 Read-Only 락 및 데모 계정 Allowlist 쓰기 가드 미들웨어
-    # 데모 계정(DEMO_MEMBER_ID) 허용 쓰기 라우트 템플릿 (기타 모든 POST/PUT/PATCH/DELETE는 403 차단)
+    # 데모 계정(DEMO_MEMBER_ID) 허용 쓰기 라우트 템플릿 (도서/스크랩 삭제 허용, 계정/책장 파괴 작업은 403 차단)
     demo_allowed_write_routes = {
         ("POST", "/api/v1/library/books"),
         ("PATCH", "/api/v1/library/books/{book_id}"),
         ("PATCH", "/api/v1/library/books/{book_id}/progress"),
         ("PATCH", "/api/v1/library/books/{book_id}/order"),
         ("PATCH", "/api/v1/library/books/{book_id}/shelf"),
+        ("DELETE", "/api/v1/library/books/{book_id}"),
         ("POST", "/api/v1/library/books/{book_id}/scraps"),
         ("PATCH", "/api/v1/library/scraps/{scrap_id}"),
+        ("DELETE", "/api/v1/library/scraps/{scrap_id}"),
         ("POST", "/api/v1/reading-sessions"),
         ("POST", "/api/v1/books/{book_id}/reading-sessions"),
         ("POST", "/api/v1/library/books/{book_id}/reading-sessions"),
