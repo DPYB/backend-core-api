@@ -1,8 +1,10 @@
+import logging
 import math
 import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import case, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -36,6 +38,8 @@ from app.schemas.library_book import (
 )
 from app.services.national_library import get_verified_cover_url
 from app.services.shelf_service import ShelfService
+
+logger = logging.getLogger(__name__)
 
 
 class BookService:
@@ -89,7 +93,16 @@ class BookService:
                     "이미 서재에 등록된 ISBN 도서입니다."
                 )
 
-        # 3. ShelfRank 계산 (소속 책장의 맨 마지막 뒤)
+        # 3. ShelfRank 계산 (소속 책장의 맨 마지막 뒤) - 동시성 충돌 방지를 위해 책장 락 시도
+        try:
+            shelf_lock_stmt = (
+                select(Shelf.id).where(Shelf.id == shelf_id).with_for_update()
+            )
+            await db.execute(shelf_lock_stmt)
+        except Exception:
+            # SQLite 등 with_for_update 미지원 방언은 안전 통과
+            pass
+
         last_book_stmt = (
             select(LibraryBook)
             .where(
@@ -149,7 +162,30 @@ class BookService:
             completed_at=completed_at,
         )
         db.add(book)
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as err:
+            err_msg = str(err).lower()
+            if "uk_library_book_shelf_rank" in err_msg or "shelf_rank" in err_msg:
+                # 동시 등록 레이스 컨디션 충돌 시: 롤백 후 최신 마지막 책 조회하여 1회 재시도
+                logger.warning(
+                    "Detected shelf_rank collision on shelf_id=%s. Retrying with fresh rank...",
+                    shelf_id,
+                )
+                await db.rollback()
+                last_book = (await db.execute(last_book_stmt)).scalars().first()
+                new_rank = (
+                    ShelfRank.after(last_book.shelf_rank)
+                    if last_book
+                    else ShelfRank.initial()
+                )
+                book.shelf_rank = new_rank
+                db.add(book)
+                await db.commit()
+            else:
+                await db.rollback()
+                raise
+
         await db.refresh(book)
 
         return CreateLibraryBookResponse(
@@ -608,12 +644,24 @@ class BookService:
                 "해당 도서에 대한 접근 권한이 없습니다."
             )
 
-        # 대상 책장 소유권 확인
-        target_shelf_stmt = select(Shelf).where(
-            Shelf.id == target_shelf_id,
-            Shelf.deleted_at.is_(None),
-        )
-        target_shelf = (await db.execute(target_shelf_stmt)).scalars().first()
+        # 대상 책장 소유권 확인 및 동시성 락
+        try:
+            target_shelf_stmt = (
+                select(Shelf)
+                .where(
+                    Shelf.id == target_shelf_id,
+                    Shelf.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            target_shelf = (await db.execute(target_shelf_stmt)).scalars().first()
+        except Exception:
+            target_shelf_stmt = select(Shelf).where(
+                Shelf.id == target_shelf_id,
+                Shelf.deleted_at.is_(None),
+            )
+            target_shelf = (await db.execute(target_shelf_stmt)).scalars().first()
+
         if not target_shelf:
             raise ShelfNotFoundException("대상 책장을 찾을 수 없습니다.")
         if target_shelf.member_id != member_id:
@@ -637,7 +685,30 @@ class BookService:
 
         book.shelf_id = target_shelf_id
         book.shelf_rank = new_rank
-        await db.commit()
+        try:
+            await db.commit()
+        except IntegrityError as err:
+            err_msg = str(err).lower()
+            if "uk_library_book_shelf_rank" in err_msg or "shelf_rank" in err_msg:
+                logger.warning(
+                    "Detected shelf_rank collision moving book_id=%s to shelf_id=%s. Retrying...",
+                    book_id,
+                    target_shelf_id,
+                )
+                await db.rollback()
+                last_book = (await db.execute(last_book_stmt)).scalars().first()
+                new_rank = (
+                    ShelfRank.after(last_book.shelf_rank)
+                    if last_book
+                    else ShelfRank.initial()
+                )
+                book.shelf_id = target_shelf_id
+                book.shelf_rank = new_rank
+                await db.commit()
+            else:
+                await db.rollback()
+                raise
+
         await db.refresh(book)
 
         return MoveBookShelfResponse(

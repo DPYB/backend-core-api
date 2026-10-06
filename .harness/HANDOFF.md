@@ -1,5 +1,27 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-06: 도서 발행일자 유연 파싱 및 책장 ShelfRank 동시성 충돌 방어 (Phase 52)
+- **배경**:
+  - 국립중앙도서관, 알라딘, 서점 API 등에서 `2024`(연도), `2024-05`(연월), `2024.05.01`, `2024/05/01` 등 비표준 문자열 인입 시 422 Unprocessable Entity 에러가 발생하는 문제를 해결.
+  - 도서 동시 등록/이관 시 동일한 마지막 책을 읽고 같은 `shelf_rank`를 계산하여 발생할 수 있는 `Key (shelf_id, shelf_rank) already exists` 유니크 제약 충돌 레이스 컨디션을 원천 방어.
+- **수행 내용**:
+  1. **날짜 파싱 헬퍼 및 DTO 유연성 구현 (`app/core/kdc_mapper.py`, `app/schemas/library_book.py`)**:
+     - `parse_to_date(val)` 헬퍼 구현: 다양한 서지 날짜(연도, 연월, 구분자 `.`/`/` 및 8자리 미상 일자)를 안전하게 `date` 객체로 보정하며, 빈 문자열/결측치 인입 시 422 없이 `None`으로 안전 폴백.
+     - `CreateLibraryBookRequest`, `UpdateLibraryBookRequest`에 `@field_validator("published_date", mode="before")` 적용.
+  2. **`shelf_rank` 동시성 락 & 충돌 재시도 구축 (`app/services/book_service.py`)**:
+     - `BookService.create_book` 및 `move_book_shelf`: 대상 책장 조회 시 `with_for_update()` 락 시도로 순번 계산 직렬화.
+     - `IntegrityError` 발생 시 `uk_library_book_shelf_rank` 충돌을 감지하여 롤백 후 최신 마지막 책 조회 및 1회 새 rank 계산 재시도(Retry) 구축.
+  3. **3-Tier 검증 통과**:
+     - `tests/test_kdc_mapper.py` (신규 날짜 파서 전수 검증), `tests/test_books.py` (비표준 발행일자 등록/수정, 랭크 연속성 안전성 검증).
+     - 총 128개 단위 테스트 100% 통과 (15.56s), Ruff 및 Mypy 무결점 검증 완료.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **게스트 스타터 가이드북(1권) 메타데이터 등록**:
+     - 사용자 전달 대기: 스타터 가이드북 메타데이터(제목, 표지 URL, 스크랩 문구 등) 수신 시 `app/services/demo_seed_data.py`의 `GUEST_SEED_BOOKS`에 1권 전용 시드로 등록.
+  2. **청소부 크론 주기 단축 및 게스트 리셋 반영**:
+     - `.github/workflows/cleanup-demo.yml` 실행 주기를 다회(예: 3~4시간 간격)로 단축 및 `target=all` 리셋 연동.
+  3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
+     - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.
+
 ## 2026-10-06: 공식 데모 계정(DEMO_MEMBER_ID) 도서 및 스크랩 삭제 권한 개방 (Phase 51)
 - **배경**:
   - `dpyb@gmail.com` 공식 데모 계정에서 도서 삭제 및 스크랩 삭제 테스트를 직접 수행할 수 있도록 삭제 권한 개방 요청.

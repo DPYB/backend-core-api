@@ -458,3 +458,101 @@ async def test_list_books_response_contains_books_field(client: AsyncClient):
     assert isinstance(data["books"], list)
     assert len(data["books"]) >= 1
     assert data["books"][0]["title"] == "호환성 도서"
+
+
+@pytest.mark.asyncio
+async def test_create_book_flexible_published_date(client: AsyncClient):
+    # 1. '2024' (연도만 전달된 경우) -> 2024-01-01
+    resp1 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "연도만 있는 책",
+            "author": "작가1",
+            "publishedDate": "2024",
+        },
+    )
+    assert resp1.status_code == 201
+    assert resp1.json()["publishedDate"] == "2024-01-01"
+
+    # 2. '2024-05' (연월만 전달된 경우) -> 2024-05-01
+    resp2 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "연월만 있는 책",
+            "author": "작가2",
+            "publishedDate": "2024-05",
+        },
+    )
+    assert resp2.status_code == 201
+    assert resp2.json()["publishedDate"] == "2024-05-01"
+
+    # 3. '2024.05.15' (도트 구분자) -> 2024-05-15
+    resp3 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "도트 일자 책",
+            "author": "작가3",
+            "publishedDate": "2024.05.15",
+        },
+    )
+    assert resp3.status_code == 201
+    assert resp3.json()["publishedDate"] == "2024-05-15"
+
+    # 4. 빈 문자열 또는 N/A 등 비정형 문자열 -> 422 크래시 없이 None으로 안전 폴백
+    resp4 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "비정형 일자 책",
+            "author": "작가4",
+            "publishedDate": "",
+        },
+    )
+    assert resp4.status_code == 201
+    assert resp4.json()["publishedDate"] is None
+
+
+@pytest.mark.asyncio
+async def test_update_book_flexible_published_date(client: AsyncClient):
+    # 등록 후 수정 시에도 다양한 날짜 문자열 정상 수용
+    create_resp = await client.post(
+        "/api/v1/library/books",
+        json={"title": "수정용 도서", "author": "작가", "publishedDate": "2020"},
+    )
+    assert create_resp.status_code == 201
+    book_id = create_resp.json()["bookId"]
+    assert create_resp.json()["publishedDate"] == "2020-01-01"
+
+    # PATCH 수정 시 '2023.11.20' 전달
+    patch_resp = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={
+            "title": "수정용 도서 (개정판)",
+            "author": "작가",
+            "publishedDate": "2023.11.20",
+            "readingStatus": "READING",
+        },
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["publishedDate"] == "2023-11-20"
+
+
+@pytest.mark.asyncio
+async def test_book_registration_shelf_rank_safety(client: AsyncClient):
+    # 동일 책장에 연속 등록 시 shelf_rank가 순차적으로 고유하게 증가하는지 검증
+    ranks = []
+    for i in range(1, 6):
+        resp = await client.post(
+            "/api/v1/library/books",
+            json={
+                "title": f"연속 등록 도서 {i}",
+                "author": f"저자 {i}",
+                "isbn": f"97911000000{i:02d}",
+            },
+        )
+        assert resp.status_code == 201
+        ranks.append(resp.json()["shelfRank"])
+
+    # 5권의 shelf_rank가 모두 고유(unique)하며 사전식으로 오름차순 정렬되어 있는지 확인
+    assert len(ranks) == 5
+    assert len(set(ranks)) == 5
+    assert ranks == sorted(ranks)

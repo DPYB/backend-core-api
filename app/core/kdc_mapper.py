@@ -1,4 +1,5 @@
 import re
+from datetime import date
 
 from app.models.enums import GenreType
 
@@ -542,5 +543,50 @@ def parse_publish_date(date_str: str | None) -> str | None:
         return f"{cleaned[:4]}-{cleaned[4:6]}"
     if length == 4:
         return cleaned[:4]
+
+    return None
+
+
+def parse_to_date(val: object) -> date | None:
+    """
+    다양한 서지 정보(국립중앙도서관, 알라딘, YES24 등)의 발행일자 형식을 파싱하여 datetime.date로 변환합니다.
+    - date/datetime 인스턴스인 경우 바로 date 반환
+    - '2024' (연도만) -> date(2024, 1, 1)
+    - '2024-05', '2024.05', '2024/05', '202405' (연월) -> date(2024, 5, 1)
+    - '2024-05-12', '2024.05.12', '2024/05/12', '20240512' -> date(2024, 5, 12)
+    - 8자리 중 일자 미상 ('20240500') -> date(2024, 5, 1)
+    - 빈 문자열, None, 또는 파싱 불가능한 형식인 경우 None으로 안전 폴백
+    """
+    if val is None:
+        return None
+    if isinstance(val, date):
+        return val
+
+    val_str = str(val).strip()
+    if not val_str:
+        return None
+
+    cleaned = re.sub(r"\D", "", val_str)
+    length = len(cleaned)
+
+    try:
+        if length >= 8:
+            year = int(cleaned[:4])
+            month = int(cleaned[4:6])
+            day = int(cleaned[6:8])
+            # 유효성 보정 (00월 또는 00일 등)
+            month = 1 if month < 1 or month > 12 else month
+            day = 1 if day < 1 or day > 31 else day
+            return date(year, month, day)
+        elif length >= 6:
+            year = int(cleaned[:4])
+            month = int(cleaned[4:6])
+            month = 1 if month < 1 or month > 12 else month
+            return date(year, month, 1)
+        elif length >= 4:
+            year = int(cleaned[:4])
+            return date(year, 1, 1)
+    except (ValueError, TypeError):
+        return None
 
     return None
