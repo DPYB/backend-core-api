@@ -96,6 +96,20 @@ async def test_demo_account_allowed_mutations(
     )
     assert session_resp.status_code == 201
 
+    # 1-6. 스크랩 삭제 성공 (204 No Content)
+    del_scrap_resp = await client.delete(
+        f"/api/v1/library/scraps/{scrap_id}",
+        headers=demo_headers,
+    )
+    assert del_scrap_resp.status_code == 204
+
+    # 1-7. 도서 삭제 성공 (204 No Content)
+    del_book_resp = await client.delete(
+        f"/api/v1/library/books/{book_id}",
+        headers=demo_headers,
+    )
+    assert del_book_resp.status_code == 204
+
 
 @pytest.mark.asyncio
 async def test_demo_account_blocked_destructive_mutations(
@@ -106,7 +120,6 @@ async def test_demo_account_blocked_destructive_mutations(
        - 비밀번호 변경 (POST /api/v1/auth/password/change)
        - 회원 탈퇴 (DELETE /api/v1/users/me)
        - 프로필 수정 (PATCH /api/v1/users/me)
-       - 도서 삭제 (DELETE /api/v1/library/books/{book_id})
        - 책장 생성/수정/삭제 (POST/PATCH/DELETE /api/v1/library/shelves)
     """
     # 2-1. 비밀번호 변경 시도 -> 403 차단
@@ -132,15 +145,7 @@ async def test_demo_account_blocked_destructive_mutations(
     assert resp_profile.status_code == 403
     assert resp_profile.json()["code"] == "DEMO_ACCOUNT_PROTECTED"
 
-    # 2-4. 도서 삭제 시도 -> 403 차단
-    resp_del_book = await client.delete(
-        "/api/v1/library/books/9999",
-        headers=demo_headers,
-    )
-    assert resp_del_book.status_code == 403
-    assert resp_del_book.json()["code"] == "DEMO_ACCOUNT_PROTECTED"
-
-    # 2-5. 책장 생성 시도 -> 403 차단
+    # 2-4. 책장 생성 시도 -> 403 차단
     resp_shelf = await client.post(
         "/api/v1/library/shelves",
         json={"name": "데모의 임의 책장"},
