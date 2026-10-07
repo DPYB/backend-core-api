@@ -24,7 +24,8 @@
      - `tests/test_books.py` (`description`, `genre_source` 등록 및 수정 영속화 검증 1건).
      - Ruff 포맷/린트 100% 무결점 (112개 파일).
      - Mypy 정적 타입 체크 100% 무결점 (102개 소스 파일).
-     - 단위 테스트 총 132개 전수 통과 (17.02s).
+  5. **PR 머지 및 배포 완료**:
+     - PR [#40](https://github.com/DPYB/backend-core-api/pull/40) 생성 및 CI/Lint 전수 통과 확인 후 `develop` 브랜치에 정상 머지 완료 (`aa58741`).
 - **다음 세션에서 이어 진행할 작업**:
   1. **프론트엔드(`frontend-reader-web`) 검색 UI 연동**:
      - 검색창(`GET /api/v1/books/search?query=...`) 연동 및 결과 카드(표지, 제목, 저자, 출판사, 쪽수, 소개글, `isRegistered` 뱃지) 렌더링.
