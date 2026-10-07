@@ -22,6 +22,8 @@ class CreateLibraryBookRequest(CamelModel):
     publisher: str | None = Field(None, max_length=100)
     published_date: date | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus = BookReadingStatus.PLANNED
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
@@ -65,6 +67,8 @@ class CreateLibraryBookResponse(CamelModel):
     publisher: str | None = None
     published_date: date | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -105,6 +109,8 @@ class LibraryBookItemResponse(CamelModel):
     subject: str | None = None
     publisher: str | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -154,6 +160,8 @@ class LibraryBookDetailResponse(CamelModel):
     publisher: str | None = None
     published_date: date | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -193,6 +201,8 @@ class UpdateLibraryBookRequest(CamelModel):
     publisher: str | None = Field(None, max_length=100)
     published_date: date | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
 
@@ -234,6 +244,8 @@ class UpdateLibraryBookResponse(CamelModel):
     publisher: str | None = None
     published_date: date | None = None
     cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None

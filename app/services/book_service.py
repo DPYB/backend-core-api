@@ -156,6 +156,8 @@ class BookService:
             publisher=req.publisher.strip() if req.publisher else None,
             published_date=req.published_date,
             cover_url=verified_cover_url,
+            description=req.description.strip() if req.description else None,
+            genre_source=req.genre_source or "KDC",
             reading_status=status,
             total_pages=req.total_pages,
             current_page=req.current_page,
@@ -201,6 +203,8 @@ class BookService:
             publisher=book.publisher,
             published_date=book.published_date,
             cover_url=book.cover_url,
+            description=book.description,
+            genre_source=book.genre_source,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -319,6 +323,8 @@ class BookService:
                 subject=b.subject,
                 publisher=b.publisher,
                 cover_url=b.cover_url,
+                description=b.description,
+                genre_source=b.genre_source,
                 reading_status=b.reading_status,
                 current_page=b.current_page,
                 total_pages=b.total_pages,
@@ -367,6 +373,8 @@ class BookService:
             publisher=book.publisher,
             published_date=book.published_date,
             cover_url=book.cover_url,
+            description=book.description,
+            genre_source=book.genre_source,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -404,6 +412,8 @@ class BookService:
             publisher=book.publisher,
             published_date=book.published_date,
             cover_url=book.cover_url,
+            description=book.description,
+            genre_source=book.genre_source,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -479,6 +489,10 @@ class BookService:
         )
         book.reading_status = new_status
         book.total_pages = req.total_pages
+        if req.description is not None:
+            book.description = req.description.strip() if req.description else None
+        if req.genre_source is not None:
+            book.genre_source = req.genre_source
 
         await db.commit()
         await db.refresh(book)
@@ -496,6 +510,8 @@ class BookService:
             publisher=book.publisher,
             published_date=book.published_date,
             cover_url=book.cover_url,
+            description=book.description,
+            genre_source=book.genre_source,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,

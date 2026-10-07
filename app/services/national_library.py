@@ -23,6 +23,8 @@ ALLOWED_COVER_HOSTS: set[str] = {
     "www.nl.go.kr",
     "nl.go.kr",
     "image.aladin.co.kr",
+    "image.yes24.com",
+    "yes24.com",
 }
 
 

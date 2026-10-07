@@ -64,6 +64,7 @@ MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안�
 6. **사서 단일 대표성**: 회원은 타입당 1마리만 보유할 수 있으며, 활성 대표 사서는 회원당 최대 1마리로 유지됩니다.
 7. **독서 진도율 및 완독 상태/일시 자동 동기화**: 도서 등록, 수정(`update_book`), 진도 변경(`update_progress`) 시 `current_page == total_pages`에 도달하면 `reading_status`가 `COMPLETED`로 자동 전이되고 완독 일시(`completed_at`)가 기록됩니다. 페이지가 감소하면 `READING`으로 자동 복귀되고 `completed_at`은 `None`으로 리셋됩니다.
 8. **국립중앙도서관 API 인메모리 TTL 캐싱, 교보문고 CDN 표지 폴백 및 Graceful Fallback**: 동일 ISBN 반복 조회 시 인메모리 TTL 캐시(정상 도서 24시간, 미존재 도서 1시간)를 우선 활용하며, 서지정보 표지 누락 시 10/13자리 정제 ISBN 기반 교보문고 고화질 CDN(`contents.kyobobook.co.kr`)으로 0ms 즉시 결합 폴백을 제공합니다. 외부 API 타임아웃이나 서버 장애 발생 시 전체 검색 요청을 에러로 중단시키지 않고 Graceful Fallback(`book: None`)을 보장합니다.
+9. **YES24 키워드 도서 검색 및 원스톱 메타데이터 확보**: 도서 검색(`GET /api/v1/books/search?query=...`) 시 YES24 Open API(`detail=Y`)를 호출하여 앞표지(`cover`), 책등(`sideCover`), 정수 쪽수(`pages`), 상세 소개글(`bookIntroduction`)을 단일 호출로 확보합니다. 묶음 세트 상품의 ISBN 결측 필터링 및 동일 ISBN In-memory Dedup, 오타 자동 교정 대응 `query` 에코, 회원 서재 기등록 여부(`isRegistered`) 실시간 매핑, 15분 인메모리 TTL 캐시를 적용합니다. 도서 테이블(`core.library_book`)에 `description` 및 `genre_source`(`KDC`, `LLM`, `USER`)를 영속화하여 3단계 데이터 진화를 지원합니다.
 
 ## 5. API 계약 및 보안 컨벤션
 

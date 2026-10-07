@@ -44,6 +44,8 @@ class Settings(BaseSettings):
 
     # External APIs
     NL_API_CERT_KEY: str | None = None
+    YES_24_API_KEY: str | None = None
+    YES24_API_KEY: str | None = None
     AI_AGENT_BASE_URL: str | None = None
 
     # Email / SMTP (Gmail)

@@ -69,6 +69,10 @@ class LibraryBook(Base):
     publisher: Mapped[str | None] = mapped_column(String(100), nullable=True)
     published_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     cover_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    genre_source: Mapped[str] = mapped_column(
+        String(20), default="KDC", server_default="KDC", nullable=False
+    )
     reading_status: Mapped[BookReadingStatus] = mapped_column(
         SAEnum(
             BookReadingStatus,

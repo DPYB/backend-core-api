@@ -18,6 +18,9 @@ class ExternalBook(CamelModel):
     published_date: str | None = None
     total_pages: int | None = None
     cover_url: str | None = None
+    side_cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
 
     @computed_field
     @property
@@ -48,6 +51,9 @@ class SearchLibraryBookDetail(CamelModel):
     published_date: str | None = None
     total_pages: int | None = None
     cover_url: str | None = None
+    side_cover_url: str | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
     reading_status: BookReadingStatus = BookReadingStatus.PLANNED
     current_page: int = 0
 
@@ -73,8 +79,26 @@ class SearchLibraryBookDetail(CamelModel):
         return 0.0
 
 
+class BookSearchItem(CamelModel):
+    title: str
+    author: str
+    isbn: str
+    publisher: str | None = None
+    published_date: str | None = None
+    cover_url: str | None = None
+    side_cover_url: str | None = None
+    total_pages: int | None = None
+    description: str | None = None
+    genre_source: str = "KDC"
+    is_registered: bool = False
+    star_score: float | None = None
+
+
 class BookSearchResponse(CamelModel):
-    already_registered: bool
+    query: str | None = None
+    total: int = 0
+    items: list[BookSearchItem] = []
+    already_registered: bool = False
     library_book: SearchLibraryBookDetail | None = None
     book: ExternalBook | None = None
 
@@ -82,6 +106,25 @@ class BookSearchResponse(CamelModel):
     @property
     def books(self) -> list[dict[str, Any]]:
         """AI 에이전트(backend-ai-agent) 및 범용 검색 클라이언트 호환 리스트"""
+        if self.items:
+            return [
+                {
+                    "book_id": "",
+                    "title": item.title,
+                    "author": item.author,
+                    "isbn": item.isbn,
+                    "publisher": item.publisher or "",
+                    "cover_url": item.cover_url,
+                    "side_cover_url": item.side_cover_url,
+                    "total_pages": item.total_pages,
+                    "description": item.description,
+                    "reading_status": "PLANNED",
+                    "display_genre": "기타/미분류",
+                    "is_registered": item.is_registered,
+                    "star_score": item.star_score,
+                }
+                for item in self.items
+            ]
         if self.library_book:
             return [
                 {
@@ -91,6 +134,7 @@ class BookSearchResponse(CamelModel):
                     "isbn": self.library_book.isbn or "",
                     "publisher": self.library_book.publisher or "",
                     "cover_url": self.library_book.cover_url,
+                    "side_cover_url": self.library_book.side_cover_url,
                     "reading_status": self.library_book.reading_status.value,
                     "display_genre": self.library_book.display_genre,
                 }
@@ -104,6 +148,7 @@ class BookSearchResponse(CamelModel):
                     "isbn": self.book.isbn or "",
                     "publisher": self.book.publisher or "",
                     "cover_url": self.book.cover_url,
+                    "side_cover_url": self.book.side_cover_url,
                     "reading_status": "PLANNED",
                     "display_genre": self.book.display_genre,
                 }
