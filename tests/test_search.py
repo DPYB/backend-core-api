@@ -294,17 +294,28 @@ async def test_search_by_keyword_query(client: AsyncClient, db_session: AsyncSes
     db_session.add(book)
     await db_session.commit()
 
-    # query 파라미터로 검색
-    resp = await client.get("/api/v1/books/search?query=인공지능")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["alreadyRegistered"] is True
-    assert data["libraryBook"]["title"] == "인공지능 철학 콘서트"
-    # AI 에이전트 호환용 books 필드 검증
-    assert "books" in data
-    assert len(data["books"]) == 1
-    assert data["books"][0]["title"] == "인공지능 철학 콘서트"
-    assert data["books"][0]["book_id"] == str(book.id)
+    from app.core.security import create_access_token
+
+    token = create_access_token(TEST_MEMBER_ID, "test@example.com", "테스터")
+
+    # YES24 결과가 없을 때의 로컬 회원 서재 fallback 검증 (외부 네트워크 차단 모킹)
+    with patch(
+        "app.routers.search.yes24_client.search_books", new_callable=AsyncMock
+    ) as mock_yes24:
+        mock_yes24.return_value = []
+        resp = await client.get(
+            "/api/v1/books/search?query=인공지능",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["alreadyRegistered"] is True
+        assert data["libraryBook"]["title"] == "인공지능 철학 콘서트"
+        # AI 에이전트 호환용 books 필드 검증
+        assert "books" in data
+        assert len(data["books"]) == 1
+        assert data["books"][0]["title"] == "인공지능 철학 콘서트"
+        assert data["books"][0]["book_id"] == str(book.id)
 
 
 @pytest.mark.asyncio
@@ -373,3 +384,197 @@ async def test_national_library_martian_sf_override():
         assert book.genre == GenreType.LITERATURE
         assert book.subject == "SF/과학소설"
         assert book.display_genre == "SF/과학소설"
+
+
+@pytest.mark.asyncio
+async def test_search_keyword_yes24_success(client: AsyncClient):
+    """YES24 키워드 검색 성공 시 query 에코 및 items 목록 정상 반환 검증"""
+    from app.schemas.search import BookSearchItem
+
+    mock_items = [
+        BookSearchItem(
+            title="불편한 편의점",
+            author="김호연 저",
+            isbn="9791161571188",
+            publisher="나무옆의자",
+            published_date="2021-04-20",
+            cover_url="https://image.yes24.com/goods/99308021/L",
+            total_pages=268,
+            description="청파동 골목 작은 편의점 이야기",
+            genre_source="KDC",
+            is_registered=False,
+            star_score=9.5,
+        ),
+        BookSearchItem(
+            title="불편한 편의점 2",
+            author="김호연 저",
+            isbn="9791161571379",
+            publisher="나무옆의자",
+            published_date="2022-08-10",
+            cover_url="https://image.yes24.com/goods/111088149/L",
+            total_pages=320,
+            description="편의점 두 번째 이야기",
+            genre_source="KDC",
+            is_registered=False,
+            star_score=9.6,
+        ),
+    ]
+
+    with patch(
+        "app.routers.search.yes24_client.search_books", new_callable=AsyncMock
+    ) as mock_search:
+        mock_search.return_value = mock_items
+        resp = await client.get("/api/v1/books/search?query=불편한")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["query"] == "불편한"  # 오타 자동교정 대응 query 에코 검증
+        assert data["total"] == 2
+        assert len(data["items"]) == 2
+        assert data["items"][0]["title"] == "불편한 편의점"
+        assert data["items"][0]["totalPages"] == 268
+        assert data["items"][0]["description"] == "청파동 골목 작은 편의점 이야기"
+        assert data["items"][0]["starScore"] == 9.5
+        assert data["items"][0]["isRegistered"] is False
+        assert "books" in data
+        assert len(data["books"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_keyword_yes24_is_registered_mapping(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """회원 서재에 1편이 이미 등록되어 있을 때 isRegistered=True 매핑 검증"""
+    from app.schemas.search import BookSearchItem
+
+    shelf = Shelf(member_id=TEST_MEMBER_ID, name="기본 책장", is_default=True)
+    db_session.add(shelf)
+    await db_session.flush()
+
+    book = LibraryBook(
+        member_id=TEST_MEMBER_ID,
+        shelf_id=shelf.id,
+        shelf_rank="V",
+        title="불편한 편의점",
+        author="김호연",
+        isbn="9791161571188",
+        genre=GenreType.LITERATURE,
+        reading_status=BookReadingStatus.COMPLETED,
+        total_pages=268,
+        current_page=268,
+    )
+    db_session.add(book)
+    await db_session.commit()
+
+    mock_items = [
+        BookSearchItem(
+            title="불편한 편의점",
+            author="김호연",
+            isbn="9791161571188",
+            publisher="나무옆의자",
+            cover_url="https://image.yes24.com/goods/99308021/L",
+            total_pages=268,
+            is_registered=False,
+        ),
+        BookSearchItem(
+            title="불편한 편의점 2",
+            author="김호연",
+            isbn="9791161571379",
+            publisher="나무옆의자",
+            cover_url="https://image.yes24.com/goods/111088149/L",
+            total_pages=320,
+            is_registered=False,
+        ),
+    ]
+
+    with patch(
+        "app.routers.search.yes24_client.search_books", new_callable=AsyncMock
+    ) as mock_search:
+        mock_search.return_value = mock_items
+        # 인증 헤더와 함께 호출
+        from app.core.security import create_access_token
+
+        token = create_access_token(TEST_MEMBER_ID, "test@example.com", "테스터")
+        resp = await client.get(
+            "/api/v1/books/search?query=불편한",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["query"] == "불편한"
+        assert data["alreadyRegistered"] is True
+        assert data["items"][0]["isbn"] == "9791161571188"
+        assert data["items"][0]["isRegistered"] is True  # 1편 등록됨
+        assert data["items"][1]["isbn"] == "9791161571379"
+        assert data["items"][1]["isRegistered"] is False  # 2편 미등록
+
+
+@pytest.mark.asyncio
+async def test_yes24_client_dedup_and_filter():
+    """Yes24Client 단위 테스트: ISBN 누락 세트 상품 필터링, Dedup, TTL 캐시 검증"""
+    from unittest.mock import MagicMock
+
+    from app.services.yes24 import Yes24Client
+
+    client = Yes24Client(api_key="test-key")
+    client.clear_cache()
+
+    mock_json_data = {
+        "success": True,
+        "message": "성공",
+        "data": {
+            "items": [
+                {
+                    "title": "클린 코드",
+                    "author": "로버트 마틴",
+                    "isbn13": "9788966265527",
+                    "publisher": "인사이트",
+                    "pages": 584,
+                    "cover": "https://image.yes24.com/goods/196209093/L",
+                    "contentDetail": {
+                        "bookIntroduction": "애자일 소프트웨어 장인 정신"
+                    },
+                    "starScore": 9.8,
+                },
+                {
+                    # 동일 ISBN 중복 상품 (사은품 한정판 등)
+                    "title": "클린 코드 (한정판 에디션)",
+                    "author": "로버트 마틴",
+                    "isbn13": "9788966265527",
+                    "publisher": "인사이트",
+                    "pages": 584,
+                },
+                {
+                    # ISBN 누락 묶음 세트 상품
+                    "title": "클린 코드 + 클린 아키텍처 세트",
+                    "author": "로버트 마틴",
+                    "isbn13": "",
+                    "isbn10": "",
+                    "pages": 900,
+                },
+            ]
+        },
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = mock_json_data
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = mock_resp
+
+        # 1차 호출
+        items = await client.search_books("클린코드")
+        assert len(items) == 1  # 중복 제거 및 세트상품 제외되어 1건만 남아야 함!
+        assert items[0].title == "클린 코드"
+        assert items[0].isbn == "9788966265527"
+        assert items[0].total_pages == 584
+        assert items[0].description == "애자일 소프트웨어 장인 정신"
+        assert items[0].star_score == 9.8
+        assert mock_get.call_count == 1
+
+        # 2차 호출 (동일 검색어 캐시 테스트)
+        items_cached = await client.search_books("클린코드")
+        assert len(items_cached) == 1
+        assert mock_get.call_count == 1  # 캐시 히트로 추가 호출 0회!

@@ -556,3 +556,45 @@ async def test_book_registration_shelf_rank_safety(client: AsyncClient):
     assert len(ranks) == 5
     assert len(set(ranks)) == 5
     assert ranks == sorted(ranks)
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_book_with_description_and_genre_source(
+    client: AsyncClient,
+):
+    """도서 등록 및 수정 시 description과 genre_source 영속화 및 반환 검증"""
+    req = {
+        "title": "불편한 편의점",
+        "author": "김호연",
+        "isbn": "9791161571188",
+        "description": "청파동 골목 모퉁이에 자리 잡은 작은 편의점 이야기",
+        "genreSource": "LLM",
+    }
+    resp = await client.post("/api/v1/library/books", json=req)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["title"] == "불편한 편의점"
+    assert data["description"] == "청파동 골목 모퉁이에 자리 잡은 작은 편의점 이야기"
+    assert data["genreSource"] == "LLM"
+    book_id = data["bookId"]
+
+    # 상세 조회 검증
+    get_resp = await client.get(f"/api/v1/library/books/{book_id}")
+    assert get_resp.status_code == 200
+    detail = get_resp.json()
+    assert detail["description"] == "청파동 골목 모퉁이에 자리 잡은 작은 편의점 이야기"
+    assert detail["genreSource"] == "LLM"
+
+    # 유저 수정(StoryGraph 피드백 루프) 검증
+    patch_req = {
+        "title": "불편한 편의점 (개정판)",
+        "author": "김호연",
+        "readingStatus": "READING",
+        "description": "업데이트된 줄거리",
+        "genreSource": "USER",
+    }
+    patch_resp = await client.patch(f"/api/v1/library/books/{book_id}", json=patch_req)
+    assert patch_resp.status_code == 200
+    patched_data = patch_resp.json()
+    assert patched_data["description"] == "업데이트된 줄거리"
+    assert patched_data["genreSource"] == "USER"

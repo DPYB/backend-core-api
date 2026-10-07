@@ -17,9 +17,11 @@ from app.schemas.search import (
 )
 from app.services.book_service import BookService
 from app.services.national_library import NationalLibraryClient
+from app.services.yes24 import Yes24Client
 
 router = APIRouter(prefix="/api/v1/books", tags=["Book Discovery"])
 client = NationalLibraryClient()
+yes24_client = Yes24Client()
 
 ISBN_REGEX = re.compile(r"^(?:[0-9]{10}|[0-9]{13})$")
 
@@ -28,14 +30,14 @@ ISBN_REGEX = re.compile(r"^(?:[0-9]{10}|[0-9]{13})$")
 async def search_book(
     isbn: str | None = Query(None, description="10자리 또는 13자리 ISBN"),
     query: str | None = Query(None, description="도서명 또는 검색 키워드"),
-    limit: int = Query(5, ge=1, le=20, description="최대 반환 도서 수"),
+    limit: int = Query(10, ge=1, le=20, description="최대 반환 도서 수"),
     member_id: uuid.UUID | None = Depends(get_optional_member_id),
     db: AsyncSession = Depends(get_db),
 ):
     """
-    도서 검색 API (ISBN 단건 검색 및 키워드 통합 검색 지원).
+    도서 검색 API (ISBN 단건 검색 및 YES24 키워드 통합 검색 지원).
     - isbn 제공 시: 국립중앙도서관 정식 서지정보 및 내 서재 등록 여부 반환
-    - query 제공 시: 내 서재 및 도서 풀에서 일치 도서 검색
+    - query 제공 시: YES24 Open API를 통해 단행본 도서 후보 목록(표지, 쪽수, 소개글) 반환 + 내 서재 기등록 여부(isRegistered) 매핑 + 원본 query 에코
     """
     if isbn is not None:
         clean_isbn = isbn.strip()
@@ -55,7 +57,35 @@ async def search_book(
     if ISBN_REGEX.match(clean_digits):
         return await _search_by_isbn(db, clean_digits, member_id)
 
-    # 일반 키워드 검색 (회원 서재 우선 검색)
+    # 1. YES24 키워드 검색 우선 시도
+    yes24_items = await yes24_client.search_books(
+        query=search_keyword, page=1, page_size=limit
+    )
+    if yes24_items:
+        # 내 서재 등록 여부(is_registered) 일괄 매핑
+        if member_id:
+            isbns = [it.isbn for it in yes24_items if it.isbn]
+            if isbns:
+                reg_stmt = select(LibraryBook.isbn).where(
+                    LibraryBook.member_id == member_id,
+                    LibraryBook.isbn.in_(isbns),
+                    LibraryBook.deleted_at.is_(None),
+                )
+                registered_isbns = set((await db.execute(reg_stmt)).scalars().all())
+                for it in yes24_items:
+                    if it.isbn in registered_isbns:
+                        it.is_registered = True
+
+        return BookSearchResponse(
+            query=search_keyword,
+            total=len(yes24_items),
+            items=yes24_items,
+            already_registered=any(it.is_registered for it in yes24_items),
+            library_book=None,
+            book=None,
+        )
+
+    # 2. YES24 미연동 또는 미검색 시: 로컬 서재 및 전체 도서 풀 fallback
     if member_id:
         stmt = (
             select(LibraryBook)
@@ -74,6 +104,9 @@ async def search_book(
         matched_member_book = result.scalars().first()
         if matched_member_book:
             return BookSearchResponse(
+                query=search_keyword,
+                total=1,
+                items=[],
                 already_registered=True,
                 library_book=SearchLibraryBookDetail(
                     book_id=matched_member_book.id,
@@ -93,6 +126,8 @@ async def search_book(
                     cover_url=matched_member_book.cover_url,
                     reading_status=matched_member_book.reading_status,
                     current_page=matched_member_book.current_page,
+                    description=matched_member_book.description,
+                    genre_source=matched_member_book.genre_source,
                 ),
                 book=None,
             )
@@ -113,6 +148,9 @@ async def search_book(
     matched_book = res.scalars().first()
     if matched_book:
         return BookSearchResponse(
+            query=search_keyword,
+            total=1,
+            items=[],
             already_registered=False,
             library_book=None,
             book=ExternalBook(
@@ -128,10 +166,15 @@ async def search_book(
                 else None,
                 total_pages=matched_book.total_pages,
                 cover_url=matched_book.cover_url,
+                description=matched_book.description,
+                genre_source=matched_book.genre_source,
             ),
         )
 
     return BookSearchResponse(
+        query=search_keyword,
+        total=0,
+        items=[],
         already_registered=False,
         library_book=None,
         book=None,
@@ -154,6 +197,9 @@ async def _search_by_isbn(
 
     if registered_book:
         return BookSearchResponse(
+            query=clean_isbn,
+            total=1,
+            items=[],
             already_registered=True,
             library_book=SearchLibraryBookDetail(
                 book_id=registered_book.id,
@@ -173,6 +219,8 @@ async def _search_by_isbn(
                 cover_url=registered_book.cover_url,
                 reading_status=registered_book.reading_status,
                 current_page=registered_book.current_page,
+                description=registered_book.description,
+                genre_source=registered_book.genre_source,
             ),
             book=None,
         )
@@ -184,6 +232,9 @@ async def _search_by_isbn(
         external_book = None
 
     return BookSearchResponse(
+        query=clean_isbn,
+        total=1 if external_book else 0,
+        items=[],
         already_registered=False,
         library_book=None,
         book=external_book,
