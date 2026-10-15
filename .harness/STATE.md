@@ -55,5 +55,7 @@
 - [x] **Phase 52 (도서 발행일자 유연 파싱 및 책장 ShelfRank 동시성 충돌 방어)**: 서지 API의 비표준 발행일자(`2024`, `2024-05`, `2024.05.01`, `2024/05/01` 등) 수용 및 빈 문자열/결측치 안전 폴백을 위한 `@field_validator("published_date", mode="before")` 및 `parse_to_date` 함수 구현, 동시 등록/이관 시 발생하던 `Key (shelf_id, shelf_rank) already exists` 유니크 제약 충돌을 원천 차단하기 위한 책장 `with_for_update()` 락 및 충돌 시 1회 최신 랭크 재계산 안전 재시도(Retry) 구축 완료 (총 128개 단위 테스트 100% Pass, ruff/mypy 무결점)
 - [x] **Phase 53 (YES24 키워드 검색 기반 도서 탐색 & 서재 등록 파이프라인 구축)**: YES24 Open API(`detail=Y`) 연동으로 표지/쪽수/소개글 원스톱 확보 및 In-memory Dedup·ISBN 결측 필터링·15분 TTL 캐시 구축, 오타 자동교정 대응 query 에코 및 회원 서재 기등록 여부(`isRegistered`) 실시간 매핑, `core.library_book` 스키마에 `description` 및 `genre_source` 선반영(Alembic `010_add_description_and_genre_source`) 완료 (총 132개 테스트 100% Pass, ruff/mypy 무결점)
 - [x] **Phase 54 (하네스 문서 슬림화, 롤링 아카이빙 및 Python 자동 검증 체계 구축)**: `HANDOFF.md` 과거 9월 세션(639줄) 아카이빙 분리(`.harness/archive/HANDOFF_2026-09.md`), 본문 98줄 4세션 슬림화, 토큰 보호 설정(`.agyignore`, `.claude/settings.json`), 5대 공통 규칙 기계적 검증기(`scripts/check_harness.py`), `AGENTS.md` 지침 동기화 완료
+- [x] **Phase 55 (회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호)**: IP당 Rate Limit(signup 분당 5회, resend 3회, confirm 10회), EmailVerification 기준 24시간 이메일당 5회 발송 상한 및 전체 400통 모니터링 경고 로그(Dry-run), /signup/resend with_for_update() 행 잠금 및 선 커밋 후 비동기 SMTP 발송, /signup 동시 가입 시 IntegrityError db.rollback() 및 409 EmailAlreadyExistsException 안전 반환, confirm 5회 오답 시 코드 즉시 만료(expires_at 과거 갱신) 및 Alembic 011_add_failed_attempts_to_email_verifications 적용, 운영 환경 SMTP 설정 앱 기동 시 fail-fast 구현 완료 (총 137개 테스트 100% Pass, ruff/mypy 무결점)
+
 
 

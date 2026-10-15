@@ -1,6 +1,37 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-16: 회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호 (Phase 55)
+- **배경**:
+  - `/signup/resend`의 30초 쿨다운만으로는 이메일 변경 가입을 통한 타인 메일 폭탄(Mail Bombing)과 Gmail 일일 500통 쿼터 고갈을 막을 수 없음.
+  - `/signup` 엔드포인트의 Rate Limit 부재, Read-then-Write 동시 요청 레이스 컨디션, `/signup/confirm`의 6자리 난수(90만 개) 브루트포스 대입 취약점, 운영 환경 SMTP 설정 누락 시 Silent Fallback 문제를 원천 차단하기 위해 다계층 보안망 구축.
+- **수행 내용**:
+  1. **IP 추출 안전성 및 Rate Limit 구축 (`app/core/rate_limit.py`)**:
+     - `CF-Connecting-IP` 최우선 신뢰 및 `X-Forwarded-For` 역순 탐색(스푸핑 방어) 안전 IP 파서 구현.
+     - `auth_rate_limiter`: `/signup`(분당 5회), `/signup/resend`(분당 3회), `/signup/confirm`(분당 10회) IP Rate Limit 적용.
+  2. **DB 기반 24시간 쿼터 상한 & DoS 방어 모니터링 (`app/services/email_service.py`)**:
+     - `EmailService.check_email_quota`: 동일 이메일 최근 24시간 5회 초과 시 429 차단, 전체 400통 도달 시 `[QUOTA_ALERT]` 경고 로그(Dry-run) 출력.
+  3. **동시성 안전성 및 락/트랜잭션 분리 (`app/routers/auth.py`, `app/services/member_service.py`)**:
+     - `/signup/resend`: `Member` 행 `with_for_update()` 락 ➔ 쿨다운/쿼터 검증 ➔ 레코드 commit(락 즉시 해제) ➔ 트랜잭션 밖에서 외부 비동기 SMTP 발송 패턴 적용 (Supabase Pooler 점유 최소화).
+     - `/signup`: 동시 가입으로 인한 DB `uq_members_email_active` 충돌 시 `IntegrityError`를 catch하여 반드시 `await db.rollback()` 수행 후 409 `EmailAlreadyExistsException` 안전 반환 (`PendingRollbackError` 원천 방지).
+  4. **브루트포스 차단 및 코드 즉시 파기 (`app/models/member.py`, Alembic `011`)**:
+     - Alembic 마이그레이션 `011_add_failed_attempts_to_email_verifications.py` 생성 및 `EmailVerification.failed_attempts` 매핑.
+     - `/signup/confirm`: `with_for_update()` 락, 불일치 시 `failed_attempts += 1`, 5회 도달 시 `expires_at = now - 1s`로 덮어써서 물리적 만료 처리 (추가 시도 원천 차단, 최대 시도 5코드×5회=25회/90만 통제).
+  5. **앱 기동 시점 SMTP Fail-Fast 검증 (`app/config.py`)**:
+     - `validate_production_settings()`에서 `ENV in ("production", "staging")`일 때 `SMTP_USER`/`SMTP_PASSWORD` 누락 시 `ValueError` 발생시켜 컨테이너 기동 즉시 fail-fast 보장.
+  6. **테스트 및 품질 검증 통과**:
+     - `tests/conftest.py`에 `reset_rate_limiters` autouse 픽스처 추가하여 테스트 간 격리 보장.
+     - `tests/test_signup.py`에 IP 제한, 이메일별 쿼터, confirm 5회 오답 차단 및 6회차 정답 차단, IntegrityError 롤백 409, SMTP fail-fast 검증 테스트 추가 (10개 테스트 전수 통과).
+     - 전체 137개 단위 테스트 100% 통과 (18.36s), ruff 및 mypy 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
+     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
+  2. **프론트엔드 Turnstile(봇 방지 CAPTCHA) 연동**:
+     - 가입 폼 Turnstile 검증 서버 siteverify 연동 및 400통 상한 Hard 차단 전환.
+  3. **데모 계정 자동 청소 크론 최적화**:
+     - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
+
 ## 2026-10-08: 하네스 문서 슬림화, 롤링 아카이빙 및 Python 자동 검증 체계 구축 (Phase 54)
+
 - **배경**:
   - `HANDOFF.md`가 739줄로 비대화되어 AI 컨텍스트 토큰 낭비 및 관리 부담이 증가함.
   - `backend-ai-agent#59` 및 `frontend-reader-web#121`에서 검증 완료된 DPYB 표준 하네스 규격을 본 레포(`backend-core-api`)에 이식하여 문서 슬림화 및 기계적 검증 자동화 완결.
@@ -101,23 +132,3 @@
   3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
      - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.
 
-## 2026-10-05: 마이페이지 독서 캘린더 월별 활동 단일 최적화 API 신설 및 프론트엔드 연동
-- **배경**:
-  - 프론트엔드 최신 마이페이지에 독서 캘린더 UI가 추가되었으나, 서재 내 모든 책에 대해 도서별 API 3종을 병렬 호출(N+1 폭탄 요청)하여 렌더링 지연 및 서버 부하를 유발함.
-  - 특정 연/월에 해당하는 회원의 독서 활동(세션, 스크랩, 감상기록, 도서 등록)을 단 한 번에 조회하는 단일 최적화 API 신설 및 연동 요청.
-- **구현 및 변경 사항**:
-  1. **DTO 스키마 정의 (`app/schemas/reading_session.py`)**:
-     - `ReadingCalendarActivityItem`: `id`, `date`(KST 기준 `YYYY-MM-DD`), `type`(`TIMER_SESSION`, `SENTENCE_SCRAP`, `READING_RECORD`, `BOOK_REGISTERED`), `title`, `desc`, `memo`, `book_id`, `book_title`, `book_cover_url`, `duration_seconds`, `page_number`, `weather`, `created_at`.
-     - `ReadingCalendarResponse`: `year`, `month`, `activities: list[ReadingCalendarActivityItem]`.
-  2. **DB 단일 쿼리 최적화 및 타임존 보정 (`app/services/reading_session_service.py`)**:
-     - `get_monthly_calendar`: KST(UTC+9) 기준 월초 ~ 월말을 UTC 시각 범위로 변환하여 쿼리함으로써 월초/월말 활동 잘림 오차 원천 방지.
-     - `record.reading_sessions`, `core.scrap`, `record.records`, `core.library_book`을 해당 월 범위로 병렬/순차 추출.
-     - 도서 메타데이터는 `LibraryBook.id.in_(referenced_book_ids)` 배치 맵으로 매핑하여 N+1 차단.
-     - 활동들을 발생 일시(`created_at` 내림차순) 정렬 반환.
-  3. **엔드포인트 신설 (`app/routers/reading_sessions.py`)**:
-     - `GET /api/v1/reading-sessions/calendar?year={year}&month={month}` (`year`: ge=2020, le=2100 / `month`: ge=1, le=12 / 인증: `Depends(get_current_member_id)`).
-  4. **백엔드 단위/통합 테스트 (`tests/test_reading_sessions.py`)**:
-     - `test_get_reading_calendar_monthly_activities` 추가: 10월 등록 도서, 세션, 스크랩, 감상문 4종 통합 검증, 9월 데이터 격리 필터링 검증, 타인 데이터 접근 차단 격리 검증 통과.
-  5. **프론트엔드 연동 참조**: 프론트엔드 독서 캘린더 단일 호출 연동 (`frontend-reader-web#115` 참조).
-  6. **계층형 품질 검증**:
-     - 백엔드 Tier 2: `uv run ruff format --check .` (110개 파일 통과), `uv run ruff check .` (0 에러), `uv run mypy .` (100개 파일 무결점), `uv run pytest -m "not integration" -x` (총 124개 테스트 100% 통과, 17.30s).

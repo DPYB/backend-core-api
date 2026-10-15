@@ -69,7 +69,7 @@ MSA 원칙인 'Database-per-Service'를 단일 Supabase 무료 인스턴스 안�
 ## 5. API 계약 및 보안 컨벤션
 
 - **소셜 로그인 및 토큰 계약**: `POST /api/v1/auth/social/{google|kakao}`를 통해 자체 Bearer JWT Access Token 및 Refresh Token 발급.
-- **실시간 이메일 인증 (Gmail SMTP)**: 회원가입 시 6자리 보안 난수 코드를 비동기(`aiosmtplib`) 발송하고 미인증 회원은 `PENDING_VERIFICATION` 상태로 보관(로그인 시 403 `EMAIL_NOT_VERIFIED` 차단). 5분 유효시간 내 코드 검증(`POST /api/v1/auth/signup/confirm`) 성공 시 `ACTIVE` 상태로 전이.
+- **실시간 이메일 인증 (Gmail SMTP) 및 다계층 보안**: 회원가입 시 6자리 보안 난수 코드를 비동기(`aiosmtplib`) 발송하고 미인증 회원은 `PENDING_VERIFICATION` 상태로 보관(로그인 시 403 `EMAIL_NOT_VERIFIED` 차단). 5분 유효시간 내 코드 검증(`POST /api/v1/auth/signup/confirm`) 성공 시 `ACTIVE` 상태로 전이. IP당 Rate Limit(signup 분당 5회, resend 3회, confirm 10회), EmailVerification 기준 이메일당 24시간 5회 발송 상한 및 전체 400통 모니터링(Dry-run), /signup/resend with_for_update() 행 락 및 선 commit 후 비동기 SMTP 발송, /signup 동시 가입 시 IntegrityError rollback 409 처리, confirm 5회 오답 시 코드 즉시 만료(expires_at 과거 갱신, Alembic 011 failed_attempts), 운영 환경 SMTP 앱 기동 fail-fast 검증을 통합 적용.
 - **해커톤 체험 모드(Guest JWT)**: `POST /api/v1/auth/guest`를 통해 `sub: guest-{uuid}`, `role: guest` 규격의 게스트 토큰 발급. 신규 발급(분당 5회)과 갱신(분당 60회) IP Rate Limit 분리. `get_current_member_id`에서 `DEMO_MEMBER_ID`로 단 1회 중앙 매핑하며, `role == "guest"` 시 모든 쓰기 요청(POST/PUT/PATCH/DELETE)을 차단(403 Forbidden `GUEST_READONLY_MODE`)하는 무결점 Read-Only 락 적용.
 - **인증 헤더**: `Authorization: Bearer <jwt_access_token>` (`sub` 클레임의 member_id UUID 추출 및 서명/만료 검증. X-Member-Id 우회 전면 차단).
 - **에러 응답 규격**: 모든 에러 응답은 `{"code": "ERROR_CODE", "message": "설명"}` 일관된 JSON 바디를 반환합니다.

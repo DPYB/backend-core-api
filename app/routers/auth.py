@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import AppException, UnauthorizedException
-from app.core.rate_limit import get_client_ip, guest_rate_limiter
+from app.core.rate_limit import (
+    auth_rate_limiter,
+    get_client_ip,
+    guest_rate_limiter,
+)
 from app.core.security import (
     create_access_token,
     create_guest_token,
@@ -122,18 +126,25 @@ async def issue_guest_token(
     summary="회원가입",
 )
 async def signup_member(
+    request: Request,
     req: SignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> SignupResponse:
     """
     정식 회원가입 엔드포인트:
+    - IP당 분당 5회 Rate Limit 검증 (429 Too Many Requests)
+    - 이메일당 24시간 5회 발송 상한 및 전체 400통 모니터링 검증
     - 이메일 중복 확인 (이미 존재 시 409 Conflict)
     - 필수 약관 동의 검증 (미동의 시 400 Bad Request)
     - 신규 회원 레코드 생성 및 비밀번호 단방향 해싱 저장
+    - 동시 가입 시 DB 충돌(IntegrityError) 발생 시 db.rollback() 후 409 Conflict 반환
     - 기본 책장(Default Shelf) 및 기본 대표 고양이 사서(CAT "블루", Lv.1) 자동 지급
     - 약관 동의 이력 영속화
     - 201 Created 반환
     """
+    client_ip = get_client_ip(request)
+    auth_rate_limiter.check(f"signup:{client_ip}", max_requests=5, window_seconds=60)
+
     member = await MemberService.register_member(db, req)
     return SignupResponse(
         member_id=str(member.member_id),
@@ -149,15 +160,25 @@ async def signup_member(
     summary="회원가입 인증 확인 (이메일 인증 단계)",
 )
 async def confirm_signup(
+    request: Request,
     req: ConfirmSignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     프론트엔드 이메일 인증(EmailVerification) 확인 엔드포인트:
+    - IP당 분당 10회 Rate Limit 검증 (대입 공격 1차 차단)
     - 회원 존재 여부 검증
-    - 최신 미인증 인증 코드 검증 (유효시간 및 일치 확인)
-    - 회원 status를 ACTIVE로 변경
+    - 최신 미인증 인증 코드 조회 시 with_for_update() 행 잠금 (동시성 안전성)
+    - 시도 횟수(failed_attempts >= 5) 최우선 차단
+    - 인증 코드 불일치 시 failed_attempts += 1 원자적 갱신
+      (5회 도달 시 expires_at = now - 1s로 즉시 덮어써서 물리적 만료 처리)
+    - 인증 완료 시 회원 status를 ACTIVE로 변경
     """
+    client_ip = get_client_ip(request)
+    auth_rate_limiter.check(
+        f"signup_confirm:{client_ip}", max_requests=10, window_seconds=60
+    )
+
     clean_email = req.email.strip().lower()
     stmt = select(Member).where(
         Member.email == clean_email,
@@ -171,7 +192,7 @@ async def confirm_signup(
     if member.status == "ACTIVE":
         return {"message": "이메일 인증이 완료되었습니다.", "status": "ACTIVE"}
 
-    # 최신 미인증 코드 조회
+    # 최신 미인증 코드 조회 (행 잠금으로 동시 요청 직렬화)
     stmt_v = (
         select(EmailVerification)
         .where(
@@ -179,6 +200,7 @@ async def confirm_signup(
             EmailVerification.is_verified.is_(False),
         )
         .order_by(EmailVerification.id.desc())
+        .with_for_update()
     )
     res_v = await db.execute(stmt_v)
     verification = res_v.scalars().first()
@@ -190,6 +212,15 @@ async def confirm_signup(
             "인증 코드가 존재하지 않거나 만료되었습니다.",
         )
 
+    # 1. 시도 횟수 초과 여부 최우선 검증
+    if verification.failed_attempts >= 5:
+        raise AppException(
+            400,
+            "VERIFICATION_ATTEMPTS_EXCEEDED",
+            "인증 번호 입력 가능 횟수(5회)를 초과하여 해당 코드가 만료되었습니다. 인증 번호를 다시 요청해 주세요.",
+        )
+
+    # 2. 만료 시간 검증
     now = datetime.now(UTC)
     expires_at = (
         verification.expires_at
@@ -203,9 +234,23 @@ async def confirm_signup(
             "인증 코드가 만료되었습니다. 인증 코드를 다시 요청해 주세요.",
         )
 
+    # 3. 인증 코드 일치 여부 확인
     if verification.code.strip() != req.code.strip():
+        verification.failed_attempts += 1
+        if verification.failed_attempts >= 5:
+            # 5회 도달 시 즉시 만료 처리 (시간을 과거로 되돌려 물리적 만료)
+            verification.expires_at = now - timedelta(seconds=1)
+            await db.commit()
+            raise AppException(
+                400,
+                "VERIFICATION_ATTEMPTS_EXCEEDED",
+                "인증 번호 입력 가능 횟수(5회)를 초과하여 해당 코드가 만료되었습니다. 인증 번호를 다시 요청해 주세요.",
+            )
+        await db.commit()
         raise AppException(
-            400, "INVALID_VERIFICATION_CODE", "인증 코드가 올바르지 않습니다."
+            400,
+            "INVALID_VERIFICATION_CODE",
+            f"인증 코드가 올바르지 않습니다. (남은 시도: {5 - verification.failed_attempts}회)",
         )
 
     verification.is_verified = True
@@ -221,19 +266,32 @@ async def confirm_signup(
     summary="회원가입 인증코드 재전송",
 )
 async def resend_signup_code(
+    request: Request,
     req: ResendSignupRequest,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """
     회원가입 인증코드 재전송:
-    - 회원 존재 여부 검증
+    - IP당 분당 3회 Rate Limit 검증 (429 Too Many Requests)
+    - 회원 행 with_for_update() 잠금으로 동시성 안전성 보장
     - 30초 내 재발송 쿨다운 확인
-    - 새 6자리 난수 코드 발급 및 Gmail SMTP 재발송
+    - 이메일당 24시간 5회 발송 상한 및 전체 400통 모니터링 검증
+    - 새 6자리 난수 코드 레코드 생성 후 즉시 commit(락 해제)
+    - 트랜잭션 밖에서 Gmail SMTP 재발송 (DB 락 점유 방지)
     """
+    client_ip = get_client_ip(request)
+    auth_rate_limiter.check(
+        f"signup_resend:{client_ip}", max_requests=3, window_seconds=60
+    )
+
     clean_email = req.email.strip().lower()
-    stmt = select(Member).where(
-        Member.email == clean_email,
-        Member.deleted_at.is_(None),
+    stmt = (
+        select(Member)
+        .where(
+            Member.email == clean_email,
+            Member.deleted_at.is_(None),
+        )
+        .with_for_update()
     )
     res = await db.execute(stmt)
     member = res.scalars().first()
@@ -265,6 +323,9 @@ async def resend_signup_code(
                 "인증 코드가 이미 발송되었습니다. 30초 후 다시 시도해 주세요.",
             )
 
+    # 24시간 발송 쿼터 검증 (이메일당 5회 & 전체 400통 모니터링)
+    await EmailService.check_email_quota(db, clean_email)
+
     code = EmailService.generate_verification_code()
     expires_at = now + timedelta(minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES)
     db.add(
@@ -273,10 +334,12 @@ async def resend_signup_code(
             code=code,
             expires_at=expires_at,
             is_verified=False,
+            failed_attempts=0,
         )
     )
     await db.commit()
 
+    # 트랜잭션 밖에서 외부 SMTP 발송 (DB 락 점유 방지)
     await EmailService.send_verification_email(clean_email, code)
     return {"message": "인증 코드가 재전송되었습니다."}
 

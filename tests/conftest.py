@@ -46,6 +46,18 @@ async def prepare_database():
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiters():
+    """테스트 간 Rate Limiter 인메모리 버킷 오염 방지 격리"""
+    from app.core.rate_limit import auth_rate_limiter, guest_rate_limiter
+
+    auth_rate_limiter.clear()
+    guest_rate_limiter.clear()
+    yield
+    auth_rate_limiter.clear()
+    guest_rate_limiter.clear()
+
+
 @pytest.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with TestSessionLocal() as session:

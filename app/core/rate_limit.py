@@ -1,3 +1,4 @@
+import ipaddress
 import time
 from collections import defaultdict
 from threading import Lock
@@ -47,13 +48,16 @@ class InMemoryRateLimiter:
 
 
 guest_rate_limiter = InMemoryRateLimiter()
+auth_rate_limiter = InMemoryRateLimiter()
 
 
 def get_client_ip(request: Request) -> str:
     """
-    요청의 클라이언트 IP를 추출합니다.
-    1. Cloudflare 엣지 헤더(CF-Connecting-IP) 최우선 확인
-    2. 표준 X-Forwarded-For 프록시 헤더 확인 (좌측 첫 번째 원본 IP)
+    요청의 클라이언트 IP를 안전하게 추출합니다.
+    1. Cloudflare 엣지 헤더(CF-Connecting-IP) 최우선 신뢰 (Cloudflare 보증)
+    2. 표준 X-Forwarded-For 프록시 헤더 확인:
+       - 클라이언트가 주입한 가짜 IP(좌측 스푸핑)를 방어하기 위해,
+         뒤(우측 홉)에서부터 역순으로 탐색하여 신뢰할 수 있는 공인 IP 선택
     3. 직결 클라이언트 호스트(request.client.host) 폴백
     """
     cf_ip = request.headers.get("CF-Connecting-IP")
@@ -62,10 +66,20 @@ def get_client_ip(request: Request) -> str:
 
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
-        # 가장 앞쪽의 원본 클라이언트 IP 선택
-        first_ip = forwarded.split(",")[0].strip()
-        if first_ip:
-            return first_ip
+        raw_ips = [ip.strip() for ip in forwarded.split(",") if ip.strip()]
+        if len(raw_ips) == 1:
+            return raw_ips[0]
+        elif len(raw_ips) > 1:
+            # 뒤에서부터 탐색하여 사설/루프백이 아닌 실제 공인 IP 선택 (스푸핑 방어)
+            for ip_str in reversed(raw_ips):
+                try:
+                    ip_obj = ipaddress.ip_address(ip_str)
+                    if not ip_obj.is_private and not ip_obj.is_loopback:
+                        return ip_str
+                except ValueError:
+                    continue
+            # 공인 IP를 찾지 못한 경우 첫 번째 IP 폴백
+            return raw_ips[0]
 
     if request.client and request.client.host:
         return request.client.host

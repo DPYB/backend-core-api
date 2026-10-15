@@ -232,3 +232,228 @@ async def test_confirm_signup_and_resend(client: AsyncClient, db_session: AsyncS
         json={"email": "nonexistent@example.com", "code": "123456"},
     )
     assert not_found_resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_signup_ip_rate_limiting(client: AsyncClient):
+    """동일 IP에서 분당 5회 초과 가입 요청 시 429 RATE_LIMIT_EXCEEDED 차단 검증"""
+    from app.core.rate_limit import auth_rate_limiter
+
+    auth_rate_limiter.clear()
+
+    # 1~5회 유효한 페이로드로 가입 시도
+    for i in range(5):
+        resp = await client.post(
+            "/api/v1/auth/signup",
+            json={
+                "email": f"rate_limit_{i}@example.com",
+                "password": "Password123!",
+                "agreeTerms": True,
+                "agreePrivacy": True,
+            },
+        )
+        assert resp.status_code == 201
+
+    # 6회차 시도 시 429 차단
+    rate_limited_resp = await client.post(
+        "/api/v1/auth/signup",
+        json={
+            "email": "rate_limit_6@example.com",
+            "password": "Password123!",
+            "agreeTerms": True,
+            "agreePrivacy": True,
+        },
+    )
+    assert rate_limited_resp.status_code == 429
+    assert rate_limited_resp.json()["code"] == "RATE_LIMIT_EXCEEDED"
+
+    auth_rate_limiter.clear()
+
+
+@pytest.mark.asyncio
+async def test_signup_email_daily_quota_exceeded(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """동일 이메일로 24시간 내 5회 발송 시 6회차 가입 및 재발송 429 차단 검증"""
+    from datetime import UTC, datetime
+
+    from app.core.rate_limit import auth_rate_limiter
+    from app.models.member import EmailVerification
+
+    auth_rate_limiter.clear()
+    target_email = "quota_limit_user@example.com"
+
+    # 이미 5건의 인증 메일이 발송된 상태 DB 시드 적재
+    now = datetime.now(UTC)
+    for i in range(5):
+        db_session.add(
+            EmailVerification(
+                email=target_email,
+                code=f"10000{i}",
+                expires_at=now,
+                is_verified=False,
+                failed_attempts=0,
+            )
+        )
+    await db_session.commit()
+
+    # 6회차 가입 시도 -> 429 차단
+    signup_payload = {
+        "email": target_email,
+        "password": "Password123!",
+        "agreeTerms": True,
+        "agreePrivacy": True,
+    }
+    resp = await client.post("/api/v1/auth/signup", json=signup_payload)
+    assert resp.status_code == 429
+    assert resp.json()["code"] == "RATE_LIMIT_EXCEEDED"
+    assert "한도(5회)를 초과" in resp.json()["message"]
+
+    auth_rate_limiter.clear()
+
+
+@pytest.mark.asyncio
+async def test_confirm_brute_force_max_attempts_exceeded(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """confirm 5회 오답 시 코드 즉시 만료 및 6회차에 정답 코드를 입력해도 차단되는지 검증"""
+    from app.core.rate_limit import auth_rate_limiter
+    from app.models.member import EmailVerification
+
+    auth_rate_limiter.clear()
+    email = "brute_force_test@example.com"
+
+    # 1. 회원가입
+    signup_payload = {
+        "email": email,
+        "password": "Password123!",
+        "agreeTerms": True,
+        "agreePrivacy": True,
+    }
+    signup_resp = await client.post("/api/v1/auth/signup", json=signup_payload)
+    assert signup_resp.status_code == 201
+
+    # 발급된 정답 코드 확인
+    v_stmt = select(EmailVerification).where(EmailVerification.email == email)
+    v_record = (await db_session.execute(v_stmt)).scalars().first()
+    assert v_record is not None
+    correct_code = v_record.code
+
+    # 2. 1~4회 오답 입력 -> 400 INVALID_VERIFICATION_CODE 및 잔여 횟수 안내
+    for attempt in range(1, 5):
+        resp = await client.post(
+            "/api/v1/auth/signup/confirm",
+            json={"email": email, "code": "000000"},
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "INVALID_VERIFICATION_CODE"
+        assert f"남은 시도: {5 - attempt}회" in resp.json()["message"]
+
+    # 3. 5회차 오답 입력 -> 400 VERIFICATION_ATTEMPTS_EXCEEDED 및 즉시 만료
+    fifth_resp = await client.post(
+        "/api/v1/auth/signup/confirm",
+        json={"email": email, "code": "000000"},
+    )
+    assert fifth_resp.status_code == 400
+    assert fifth_resp.json()["code"] == "VERIFICATION_ATTEMPTS_EXCEEDED"
+
+    # 4. 6회차에 '정답 코드'를 입력해도 이미 만료/차단되어 절대 통과 불가
+    sixth_resp = await client.post(
+        "/api/v1/auth/signup/confirm",
+        json={"email": email, "code": correct_code},
+    )
+    assert sixth_resp.status_code == 400
+    assert sixth_resp.json()["code"] == "VERIFICATION_ATTEMPTS_EXCEEDED"
+
+    auth_rate_limiter.clear()
+
+
+@pytest.mark.asyncio
+async def test_signup_concurrent_integrity_error_rollback(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+):
+    """동시 가입으로 최종 DB commit 시 IntegrityError 발생 시 db.rollback() 호출 및 409 EmailAlreadyExistsException 발생 검증"""
+    from sqlalchemy.exc import IntegrityError
+
+    from app.core.exceptions import EmailAlreadyExistsException
+    from app.schemas.auth import SignupRequest
+    from app.services.librarian_service import LibrarianService
+    from app.services.member_service import MemberService
+
+    # 사서 마스터 시드 데이터를 사전 적재하여 register_member 내부의 시드 commit 간섭 배제
+    await LibrarianService.ensure_seed_data(db_session)
+
+    rollback_called = False
+    original_rollback = db_session.rollback
+    original_commit = db_session.commit
+    commit_call_count = 0
+
+    async def mock_rollback():
+        nonlocal rollback_called
+        rollback_called = True
+        await original_rollback()
+
+    async def mock_commit():
+        nonlocal commit_call_count
+        commit_call_count += 1
+        # ShelfService 내부의 첫 번째 commit은 정상 통과, 최종 register_member commit 시점에 충돌 모의
+        if commit_call_count > 1:
+            raise IntegrityError(
+                "duplicate key value violates unique constraint",
+                params=None,
+                orig=Exception(),
+            )
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", mock_commit)
+    monkeypatch.setattr(db_session, "rollback", mock_rollback)
+
+    req = SignupRequest(
+        email="concurrent_fail@example.com",
+        password="Password123!",
+        nickname="동시가입자",
+        agree_terms=True,
+        agree_privacy=True,
+    )
+
+    with pytest.raises(
+        EmailAlreadyExistsException, match="이미 사용 중인 이메일입니다"
+    ):
+        await MemberService.register_member(db_session, req)
+
+    assert rollback_called is True
+
+
+def test_smtp_startup_fail_fast():
+    """운영 및 스테이징 환경에서 SMTP 설정 누락 시 기동 즉시 fail-fast 검증"""
+    from app.config import Settings
+
+    # production 환경에서 SMTP_USER/PASSWORD 누락 시 ValueError 발생 확인
+    with pytest.raises(
+        ValueError, match="CRITICAL CONFIGURATION: SMTP_USER and SMTP_PASSWORD"
+    ):
+        Settings(
+            ENV="production",
+            JWT_SECRET_KEY="a-secure-production-key-for-test-12345",
+            SMTP_USER=None,
+            SMTP_PASSWORD=None,
+        )
+
+    # staging 환경에서도 동일하게 ValueError 발생 확인
+    with pytest.raises(
+        ValueError, match="CRITICAL CONFIGURATION: SMTP_USER and SMTP_PASSWORD"
+    ):
+        Settings(
+            ENV="staging",
+            JWT_SECRET_KEY="a-secure-production-key-for-test-12345",
+            SMTP_USER=None,
+            SMTP_PASSWORD=None,
+        )
+
+    # local 환경에서는 SMTP 누락이어도 정상 기동 확인
+    local_settings = Settings(
+        ENV="local",
+        SMTP_USER=None,
+        SMTP_PASSWORD=None,
+    )
+    assert local_settings.ENV == "local"
