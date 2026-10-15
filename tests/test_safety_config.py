@@ -15,12 +15,15 @@ def test_production_jwt_secret_validation():
 
 
 def test_production_jwt_secret_valid():
-    """운영 환경(ENV=production)에서 안전한 커스텀 JWT 시크릿 설정 시 정상 초기화 검증"""
+    """운영 환경(ENV=production)에서 안전한 커스텀 JWT 시크릿 및 SMTP 설정 시 정상 초기화 검증"""
     cfg = Settings(
         ENV="production",
         JWT_SECRET_KEY="a-secure-production-random-secret-key-value",
+        SMTP_USER="test@example.com",
+        SMTP_PASSWORD="test-app-password",
     )
     assert cfg.JWT_SECRET_KEY == "a-secure-production-random-secret-key-value"
+    assert cfg.SMTP_USER == "test@example.com"
 
 
 def test_remote_database_detection():

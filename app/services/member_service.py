@@ -197,6 +197,9 @@ class MemberService:
         if existing_member and existing_member.status == "ACTIVE":
             raise EmailAlreadyExistsException("이미 사용 중인 이메일입니다.")
 
+        # 3. 24시간 발송 쿼터 검증 (이메일당 5회 상한 & 전체 400통 모니터링)
+        await EmailService.check_email_quota(db, clean_email)
+
         nickname = (
             req.nickname.strip()
             if req.nickname and req.nickname.strip()
@@ -219,7 +222,7 @@ class MemberService:
             existing_member.gender = req.gender.strip() if req.gender else None
             member = existing_member
         else:
-            # 3. 신규 회원 생성 (인증 대기 상태)
+            # 4. 신규 회원 생성 (인증 대기 상태)
             new_member_id = uuid.uuid4()
             new_member = Member(
                 member_id=new_member_id,
@@ -236,13 +239,13 @@ class MemberService:
             db.add(new_member)
             await db.flush()
 
-            # 4. 기본 책장 자동 생성 보장
+            # 5. 기본 책장 자동 생성 보장
             await ShelfService.get_or_create_default_shelf(db, new_member_id)
 
-            # 5. 기본 대표 사서(CAT "블루", Lv.1) 자동 지급 보장
+            # 6. 기본 대표 사서(CAT "블루", Lv.1) 자동 지급 보장
             await MemberService._ensure_default_cat_librarian(db, new_member_id)
 
-            # 6. 약관 동의 이력 저장
+            # 7. 약관 동의 이력 저장
             terms_stmt = select(Terms).where(
                 Terms.expired_at.is_(None),
                 Terms.deleted_at.is_(None),
@@ -269,7 +272,7 @@ class MemberService:
                     )
             member = new_member
 
-        # 7. 6자리 인증 코드 생성 및 영속화
+        # 8. 6자리 인증 코드 생성 및 영속화
         code = EmailService.generate_verification_code()
         expires_at = datetime.now(UTC) + timedelta(
             minutes=settings.EMAIL_VERIFICATION_EXPIRE_MINUTES
@@ -280,13 +283,20 @@ class MemberService:
                 code=code,
                 expires_at=expires_at,
                 is_verified=False,
+                failed_attempts=0,
             )
         )
 
-        await db.commit()
-        await db.refresh(member)
+        from sqlalchemy.exc import IntegrityError
 
-        # 8. 인증 이메일 비동기 발송
+        try:
+            await db.commit()
+            await db.refresh(member)
+        except IntegrityError as e:
+            await db.rollback()
+            raise EmailAlreadyExistsException("이미 사용 중인 이메일입니다.") from e
+
+        # 9. 인증 이메일 비동기 발송 (트랜잭션 커밋 완료 후 발송)
         await EmailService.send_verification_email(clean_email, code)
 
         return member

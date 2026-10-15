@@ -3,6 +3,7 @@ import secrets
 from email.message import EmailMessage
 
 import aiosmtplib
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.exceptions import AppException
@@ -17,11 +18,53 @@ class EmailService:
         return f"{secrets.randbelow(900000) + 100000}"
 
     @classmethod
+    async def check_email_quota(cls, db: AsyncSession, to_email: str) -> None:
+        """
+        24시간 발송 쿼터를 검증합니다:
+        1. 동일 이메일 24시간 5회 초과 시 429 차단
+        2. 서비스 전체 24시간 400회 초과 시 관리자 경고 로그(Dry-run) 출력
+        """
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import func, select
+
+        from app.core.exceptions import RateLimitExceededException
+        from app.models.member import EmailVerification
+
+        now = datetime.now(UTC)
+        day_ago = now - timedelta(hours=24)
+
+        # 1. 동일 이메일 24시간 5회 상한 검증
+        stmt_email = select(func.count(EmailVerification.id)).where(
+            EmailVerification.email == to_email,
+            EmailVerification.created_at >= day_ago,
+        )
+        res_email = await db.execute(stmt_email)
+        email_count = res_email.scalar_one()
+        if email_count >= 5:
+            raise RateLimitExceededException(
+                "해당 이메일로 발송 가능한 일일 인증 메일 한도(5회)를 초과했습니다. 24시간 후 다시 시도해 주세요."
+            )
+
+        # 2. 서비스 전체 24시간 400통 모니터링 (Gmail 500통 한도 보호 Dry-run)
+        stmt_total = select(func.count(EmailVerification.id)).where(
+            EmailVerification.created_at >= day_ago,
+        )
+        res_total = await db.execute(stmt_total)
+        total_count = res_total.scalar_one()
+        if total_count >= 400:
+            logger.critical(
+                "[QUOTA_ALERT] Daily total email verification limit reached: %d/400 (Gmail 500 quota warning)",
+                total_count,
+            )
+
+    @classmethod
     async def send_verification_email(cls, to_email: str, code: str) -> None:
         """
         회원가입 6자리 인증 코드를 Gmail SMTP를 통해 발송합니다.
         SMTP 설정이 비어있거나 로컬 테스트 모드일 경우 로그만 남기고 정상 종료합니다.
         """
+
         if not settings.SMTP_USER or not settings.SMTP_PASSWORD:
             logger.warning(
                 "[EmailService] SMTP credentials not set. Simulated code for %s: %s",
