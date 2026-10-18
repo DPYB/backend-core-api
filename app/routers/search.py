@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import re
 import uuid
 
@@ -7,11 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidSearchParameterException
 from app.core.isbn import normalize_isbn
+from app.core.kdc_mapper import parse_to_genre_and_subject
 from app.core.security import get_optional_member_id
 from app.db.session import get_db
 from app.models.library_book import LibraryBook
 from app.schemas.library_book import LibraryBookDetailResponse
 from app.schemas.search import (
+    BookSearchItem,
     BookSearchResponse,
     ExternalBook,
     SearchLibraryBookDetail,
@@ -19,6 +23,8 @@ from app.schemas.search import (
 from app.services.book_service import BookService
 from app.services.national_library import NationalLibraryClient
 from app.services.yes24 import Yes24Client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/books", tags=["Book Discovery"])
 client = NationalLibraryClient()
@@ -242,15 +248,79 @@ async def _search_by_isbn(
                 current_page=registered_book.current_page,
                 description=registered_book.description,
                 genre_source=registered_book.genre_source,
+                genre_confidence=registered_book.genre_confidence,
             ),
             book=None,
         )
 
-    # 2. 미등록 도서인 경우 국립중앙도서관 API 조회 (장애/타임아웃 시 graceful fallback)
-    try:
-        external_book = await client.lookup_by_isbn(clean_isbn)
-    except Exception:
-        external_book = None
+    # 2. 미등록 도서인 경우 YES24 + 국립중앙도서관 API 병렬(asyncio.gather) 조회
+    #    - YES24: 상세 줄거리(description), 실쪽수(total_pages), 고화질 표지(cover_url), 상품링크(link)
+    #    - 국립도서관: 정식 KDC 분류기호(kdc), 세부 주제어(subject), 대분류(genre)
+    async def fetch_yes24() -> BookSearchItem | None:
+        try:
+            return await yes24_client.lookup_by_isbn(clean_isbn)
+        except Exception as e:
+            logger.warning(f"YES24 lookup_by_isbn 예외 발생: {e} (ISBN: {clean_isbn})")
+            return None
+
+    async def fetch_nl() -> ExternalBook | None:
+        try:
+            return await client.lookup_by_isbn(clean_isbn)
+        except Exception as e:
+            logger.warning(
+                f"국립중앙도서관 lookup_by_isbn 예외 발생: {e} (ISBN: {clean_isbn})"
+            )
+            return None
+
+    yes24_item, nl_book = await asyncio.gather(fetch_yes24(), fetch_nl())
+
+    external_book: ExternalBook | None = None
+    if yes24_item and nl_book:
+        # 양쪽 모두 성공 시: YES24(소개글, 쪽수, 표지, 링크) + 국립도서관(KDC, 장르, 주제어) 융합
+        external_book = ExternalBook(
+            title=yes24_item.title or nl_book.title,
+            author=yes24_item.author or nl_book.author,
+            isbn=clean_isbn,
+            genre=nl_book.genre,
+            kdc=nl_book.kdc,
+            subject=nl_book.subject,
+            publisher=yes24_item.publisher or nl_book.publisher,
+            published_date=yes24_item.published_date or nl_book.published_date,
+            total_pages=yes24_item.total_pages or nl_book.total_pages,
+            cover_url=yes24_item.cover_url or nl_book.cover_url,
+            side_cover_url=yes24_item.side_cover_url or nl_book.side_cover_url,
+            description=yes24_item.description or nl_book.description,
+            genre_source=nl_book.genre_source or "KDC",
+            genre_confidence=None,
+            link=yes24_item.link,
+        )
+    elif yes24_item:
+        # YES24만 성공 시: 소개글/표지/쪽수 확보 및 KDC 매퍼로 1차 장르 추론
+        inferred_genre, inferred_subject = parse_to_genre_and_subject(
+            genre_input=None,
+            current_subject=None,
+            title=yes24_item.title,
+        )
+        external_book = ExternalBook(
+            title=yes24_item.title,
+            author=yes24_item.author,
+            isbn=clean_isbn,
+            genre=inferred_genre,
+            kdc=None,
+            subject=inferred_subject,
+            publisher=yes24_item.publisher,
+            published_date=yes24_item.published_date,
+            total_pages=yes24_item.total_pages,
+            cover_url=yes24_item.cover_url,
+            side_cover_url=yes24_item.side_cover_url,
+            description=yes24_item.description,
+            genre_source="KDC",
+            genre_confidence=None,
+            link=yes24_item.link,
+        )
+    elif nl_book:
+        # 국립도서관만 성공 시
+        external_book = nl_book
 
     return BookSearchResponse(
         query=display_query,

@@ -1,5 +1,7 @@
 import logging
+import re
 import time
+from typing import Any
 
 import httpx
 
@@ -25,6 +27,80 @@ class Yes24Client:
         """인메모리 캐시 초기화 (테스트 및 수동 갱신용)"""
         self._cache.clear()
 
+    def _parse_book_item(self, it: dict[str, Any]) -> BookSearchItem | None:
+        raw_isbn13 = (it.get("isbn13") or "").strip()
+        raw_isbn10 = (it.get("isbn10") or "").strip()
+        # 13자리 우선, 없으면 10자리 활용
+        final_isbn = raw_isbn13 or raw_isbn10
+
+        # 세트/번들 상품 등 ISBN 결측 상품 제외
+        if not final_isbn:
+            return None
+
+        # 날짜 파싱
+        pub_date_raw = it.get("publishDate")
+        pub_date_str = None
+        if pub_date_raw:
+            parsed_d = parse_to_date(pub_date_raw)
+            if parsed_d:
+                pub_date_str = parsed_d.isoformat()
+
+        # 표지 URL 및 교보문고 CDN 폴백
+        raw_cover = it.get("cover")
+        cover_url = get_verified_cover_url(raw_cover, final_isbn)
+        side_cover_url = it.get("sideCover") or None
+
+        # 소개글 추출
+        content_detail = it.get("contentDetail") or {}
+        description = content_detail.get("bookIntroduction") or content_detail.get(
+            "bookSummary"
+        )
+        if description:
+            description = description.strip()
+
+        # 쪽수 파싱
+        pages = None
+        if it.get("pages") is not None:
+            try:
+                pages = int(it["pages"])
+            except (ValueError, TypeError):
+                pages = None
+
+        # 평점 파싱
+        star_score = None
+        if it.get("starScore") is not None:
+            try:
+                star_score = float(it["starScore"])
+            except (ValueError, TypeError):
+                star_score = None
+
+        # 상품 링크 파싱
+        link = (
+            it.get("link")
+            or it.get("goodsUrl")
+            or (
+                f"https://www.yes24.com/Product/Goods/{it['goodsNo']}"
+                if it.get("goodsNo")
+                else None
+            )
+        )
+
+        return BookSearchItem(
+            title=it.get("title", "").strip(),
+            author=it.get("author", "").strip(),
+            isbn=final_isbn,
+            publisher=(it.get("publisher") or "").strip() or None,
+            published_date=pub_date_str,
+            cover_url=cover_url,
+            side_cover_url=side_cover_url,
+            total_pages=pages,
+            description=description,
+            genre_source="KDC",
+            link=link,
+            is_registered=False,  # 라우터에서 회원 서재 대조 후 갱신
+            star_score=star_score,
+        )
+
     async def search_books(
         self,
         query: str,
@@ -34,7 +110,7 @@ class Yes24Client:
         """
         YES24 Open API를 호출하여 도서 키워드 검색 수행.
         - category="BOOK", detail="Y"를 적용하여 단행본 도서의 쪽수(pages), 앞표지(cover),
-          책등(sideCover), 소개글(bookIntroduction), 평점(starScore)을 일괄 확보.
+          책등(sideCover), 소개글(bookIntroduction), 평점(starScore), 상품링크(link)를 일괄 확보.
         - 세트/번들 등 ISBN 결측 상품은 제외(필터링).
         - 동일 ISBN 다중 상품은 In-memory Dedup (대표 상품 1건 유지).
         - 인메모리 TTL 캐시(15분) 적용으로 외부 API 호출 최소화.
@@ -99,73 +175,91 @@ class Yes24Client:
         seen_isbns: set[str] = set()
 
         for it in raw_items:
-            raw_isbn13 = (it.get("isbn13") or "").strip()
-            raw_isbn10 = (it.get("isbn10") or "").strip()
-            # 13자리 우선, 없으면 10자리 활용
-            final_isbn = raw_isbn13 or raw_isbn10
-
-            # 세트/번들 상품 등 ISBN 결측 상품 제외
-            if not final_isbn:
+            item = self._parse_book_item(it)
+            if not item:
                 continue
 
             # 동일 ISBN Dedup (먼저 랭크된 대표 상품 1건 유지)
-            if final_isbn in seen_isbns:
+            if item.isbn in seen_isbns:
                 continue
-            seen_isbns.add(final_isbn)
-
-            # 날짜 파싱
-            pub_date_raw = it.get("publishDate")
-            pub_date_str = None
-            if pub_date_raw:
-                parsed_d = parse_to_date(pub_date_raw)
-                if parsed_d:
-                    pub_date_str = parsed_d.isoformat()
-
-            # 표지 URL 및 교보문고 CDN 폴백
-            raw_cover = it.get("cover")
-            cover_url = get_verified_cover_url(raw_cover, final_isbn)
-            side_cover_url = it.get("sideCover") or None
-
-            # 소개글 추출
-            content_detail = it.get("contentDetail") or {}
-            description = content_detail.get("bookIntroduction") or content_detail.get(
-                "bookSummary"
-            )
-            if description:
-                description = description.strip()
-
-            # 쪽수 파싱
-            pages = None
-            if it.get("pages") is not None:
-                try:
-                    pages = int(it["pages"])
-                except (ValueError, TypeError):
-                    pages = None
-
-            # 평점 파싱
-            star_score = None
-            if it.get("starScore") is not None:
-                try:
-                    star_score = float(it["starScore"])
-                except (ValueError, TypeError):
-                    star_score = None
-
-            item = BookSearchItem(
-                title=it.get("title", "").strip(),
-                author=it.get("author", "").strip(),
-                isbn=final_isbn,
-                publisher=(it.get("publisher") or "").strip() or None,
-                published_date=pub_date_str,
-                cover_url=cover_url,
-                side_cover_url=side_cover_url,
-                total_pages=pages,
-                description=description,
-                genre_source="KDC",
-                is_registered=False,  # 라우터에서 회원 서재 대조 후 갱신
-                star_score=star_score,
-            )
+            seen_isbns.add(item.isbn)
             items.append(item)
 
         # 15분 캐시 저장
         self._cache[cache_key] = (items, now + self.DEFAULT_TTL_SECONDS)
         return items
+
+    async def lookup_by_isbn(self, isbn: str) -> BookSearchItem | None:
+        """
+        YES24 Open API를 호출하여 단일 ISBN 기준 도서 상세 조회.
+        - detail="Y" 파라미터 적용으로 소개글(bookIntroduction), 쪽수(pages), 앞표지(cover), 상품링크(link) 확보.
+        - 인메모리 TTL 캐시(15분) 적용.
+        """
+        clean_isbn = re.sub(r"[-\s]", "", isbn.strip()).upper()
+        if not clean_isbn:
+            return None
+
+        cache_key = f"isbn:{clean_isbn}"
+        now = time.time()
+        if cache_key in self._cache:
+            cached_items, expires_at = self._cache[cache_key]
+            if now < expires_at and cached_items:
+                return cached_items[0]
+            del self._cache[cache_key]
+
+        if not self.api_key:
+            logger.warning("YES24_API_KEY가 설정되지 않아 ISBN 조회를 건너뜁니다.")
+            return None
+
+        params = {
+            "query": clean_isbn,
+            "category": "BOOK",
+            "page": 1,
+            "pageSize": 5,
+            "detail": "Y",
+        }
+        headers = {
+            "X-Api-Key": self.api_key,
+            "User-Agent": "backend-core-api/1.0",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(self.SEARCH_URL, headers=headers, params=params)
+                if resp.status_code != 200:
+                    logger.warning(
+                        f"YES24 lookup_by_isbn HTTP 오류: {resp.status_code} (ISBN: {clean_isbn})"
+                    )
+                    return None
+                data = resp.json()
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            logger.warning(
+                f"YES24 lookup_by_isbn 통신 실패 또는 타임아웃: {e} (ISBN: {clean_isbn})"
+            )
+            return None
+        except Exception as e:
+            logger.warning(
+                f"YES24 lookup_by_isbn 처리 중 오류: {e} (ISBN: {clean_isbn})"
+            )
+            return None
+
+        if not data.get("success"):
+            return None
+
+        raw_items = data.get("data", {}).get("items", [])
+        for it in raw_items:
+            item = self._parse_book_item(it)
+            if not item:
+                continue
+            item_clean = re.sub(r"[-\s]", "", item.isbn).upper()
+            if item_clean == clean_isbn or (clean_isbn in item_clean):
+                self._cache[cache_key] = ([item], now + self.DEFAULT_TTL_SECONDS)
+                return item
+
+        if raw_items:
+            first_item = self._parse_book_item(raw_items[0])
+            if first_item:
+                self._cache[cache_key] = ([first_item], now + self.DEFAULT_TTL_SECONDS)
+                return first_item
+
+        return None

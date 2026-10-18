@@ -25,6 +25,7 @@ class CreateLibraryBookRequest(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus = BookReadingStatus.PLANNED
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
@@ -77,6 +78,7 @@ class CreateLibraryBookResponse(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -119,6 +121,7 @@ class LibraryBookItemResponse(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -170,6 +173,7 @@ class LibraryBookDetailResponse(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None
@@ -211,6 +215,7 @@ class UpdateLibraryBookRequest(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str | None = None
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
 
@@ -261,6 +266,7 @@ class UpdateLibraryBookResponse(CamelModel):
     cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus
     current_page: int
     total_pages: int | None = None

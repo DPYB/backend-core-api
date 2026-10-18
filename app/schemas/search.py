@@ -21,6 +21,8 @@ class ExternalBook(CamelModel):
     side_cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
+    link: str | None = None
 
     @computed_field
     @property
@@ -54,6 +56,7 @@ class SearchLibraryBookDetail(CamelModel):
     side_cover_url: str | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
     reading_status: BookReadingStatus = BookReadingStatus.PLANNED
     current_page: int = 0
 
@@ -90,6 +93,8 @@ class BookSearchItem(CamelModel):
     total_pages: int | None = None
     description: str | None = None
     genre_source: str = "KDC"
+    genre_confidence: float | None = None
+    link: str | None = None
     is_registered: bool = False
     star_score: float | None = None
 
@@ -122,6 +127,7 @@ class BookSearchResponse(CamelModel):
                     "display_genre": "기타/미분류",
                     "is_registered": item.is_registered,
                     "star_score": item.star_score,
+                    "link": item.link,
                 }
                 for item in self.items
             ]

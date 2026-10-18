@@ -36,6 +36,7 @@ from app.schemas.library_book import (
     UpdateLibraryBookResponse,
     UpdateProgressResponse,
 )
+from app.services.ai_agent import AiAgentClient
 from app.services.national_library import get_verified_cover_url
 from app.services.shelf_service import ShelfService
 
@@ -143,6 +144,63 @@ class BookService:
             req.cover_url, clean_isbn, is_guest=is_guest
         )
 
+        # 4-1. 장르 및 세부 주제어 융합 / 동일 ISBN 캐시 재사용
+        final_genre = req.genre
+        final_subject = req.subject.strip() if req.subject else None
+        final_kdc = req.kdc.strip() if req.kdc else None
+        final_genre_source = req.genre_source or "KDC"
+        final_genre_confidence = req.genre_confidence
+
+        if final_genre_source != "USER":
+            cached_book = None
+            if clean_isbn:
+                cache_stmt = (
+                    select(LibraryBook)
+                    .where(
+                        LibraryBook.isbn == clean_isbn,
+                        LibraryBook.genre_source != "USER",
+                        LibraryBook.deleted_at.is_(None),
+                    )
+                    .order_by(LibraryBook.id.desc())
+                    .limit(1)
+                )
+                cached_book = (await db.execute(cache_stmt)).scalars().first()
+
+            if cached_book and cached_book.genre != GenreType.NONE:
+                if final_genre == GenreType.NONE:
+                    final_genre = cached_book.genre
+                final_subject = final_subject or cached_book.subject
+                final_kdc = final_kdc or cached_book.kdc
+                final_genre_source = cached_book.genre_source
+                final_genre_confidence = cached_book.genre_confidence
+                logger.info(
+                    "ISBN %s 동일 도서 장르 캐시 재사용 (장르: %s, 주제: %s, 출처: %s)",
+                    clean_isbn,
+                    final_genre,
+                    final_subject,
+                    final_genre_source,
+                )
+            else:
+                ai_agent_client = AiAgentClient()
+                classify_result = await ai_agent_client.classify_genre(
+                    title=req.title,
+                    author=req.author,
+                    description=req.description,
+                    kdc=final_kdc,
+                    isbn=clean_isbn,
+                )
+                if classify_result.genre != GenreType.NONE:
+                    if final_genre == GenreType.NONE or classify_result.source == "LLM":
+                        final_genre = classify_result.genre
+
+                    if classify_result.source == "LLM":
+                        final_subject = classify_result.subject or final_subject
+                    else:
+                        final_subject = final_subject or classify_result.subject
+
+                    final_genre_source = classify_result.source
+                    final_genre_confidence = classify_result.confidence
+
         book = LibraryBook(
             member_id=member_id,
             shelf_id=shelf_id,
@@ -150,14 +208,15 @@ class BookService:
             title=req.title.strip(),
             author=req.author.strip(),
             isbn=clean_isbn,
-            genre=req.genre,
-            kdc=req.kdc.strip() if req.kdc else None,
-            subject=req.subject.strip() if req.subject else None,
+            genre=final_genre,
+            kdc=final_kdc,
+            subject=final_subject,
             publisher=req.publisher.strip() if req.publisher else None,
             published_date=req.published_date,
             cover_url=verified_cover_url,
             description=req.description.strip() if req.description else None,
-            genre_source=req.genre_source or "KDC",
+            genre_source=final_genre_source,
+            genre_confidence=final_genre_confidence,
             reading_status=status,
             total_pages=req.total_pages,
             current_page=req.current_page,
@@ -205,6 +264,7 @@ class BookService:
             cover_url=book.cover_url,
             description=book.description,
             genre_source=book.genre_source,
+            genre_confidence=book.genre_confidence,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -325,6 +385,7 @@ class BookService:
                 cover_url=b.cover_url,
                 description=b.description,
                 genre_source=b.genre_source,
+                genre_confidence=b.genre_confidence,
                 reading_status=b.reading_status,
                 current_page=b.current_page,
                 total_pages=b.total_pages,
@@ -375,6 +436,7 @@ class BookService:
             cover_url=book.cover_url,
             description=book.description,
             genre_source=book.genre_source,
+            genre_confidence=book.genre_confidence,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -414,6 +476,7 @@ class BookService:
             cover_url=book.cover_url,
             description=book.description,
             genre_source=book.genre_source,
+            genre_confidence=book.genre_confidence,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
@@ -493,6 +556,8 @@ class BookService:
             book.description = req.description.strip() if req.description else None
         if req.genre_source is not None:
             book.genre_source = req.genre_source
+        if req.genre_confidence is not None:
+            book.genre_confidence = req.genre_confidence
 
         await db.commit()
         await db.refresh(book)
@@ -512,6 +577,7 @@ class BookService:
             cover_url=book.cover_url,
             description=book.description,
             genre_source=book.genre_source,
+            genre_confidence=book.genre_confidence,
             reading_status=book.reading_status,
             current_page=book.current_page,
             total_pages=book.total_pages,
