@@ -542,7 +542,13 @@ async def test_book_registration_shelf_rank_safety(client: AsyncClient):
     ranks = []
     for i in range(1, 6):
         raw12 = f"9791100000{i:02d}"
-        check = (10 - (sum(int(d) * (1 if idx % 2 == 0 else 3) for idx, d in enumerate(raw12)) % 10)) % 10
+        check = (
+            10
+            - (
+                sum(int(d) * (1 if idx % 2 == 0 else 3) for idx, d in enumerate(raw12))
+                % 10
+            )
+        ) % 10
         resp = await client.post(
             "/api/v1/library/books",
             json={

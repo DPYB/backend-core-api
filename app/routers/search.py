@@ -68,7 +68,9 @@ async def search_book(
         try:
             norm_isbn = normalize_isbn(clean_digits)
             if norm_isbn:
-                return await _search_by_isbn(db, norm_isbn, member_id, query_str=search_keyword)
+                return await _search_by_isbn(
+                    db, norm_isbn, member_id, query_str=search_keyword
+                )
         except ValueError:
             pass
 
