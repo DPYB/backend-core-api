@@ -39,7 +39,7 @@ async def test_demo_account_allowed_mutations(
         json={
             "title": "데모 체험용 도서",
             "author": "홍길동",
-            "isbn": "9781111111111",
+            "isbn": "9781111111113",
             "totalPages": 200,
             "currentPage": 10,
         },
@@ -168,7 +168,7 @@ async def test_demo_account_book_quota_limit(
     # 1번째 도서 등록 (성공)
     r1 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 1", "author": "저자 1", "isbn": "9781000000001"},
+        json={"title": "도서 1", "author": "저자 1", "isbn": "9781000000009"},
         headers=demo_headers,
     )
     assert r1.status_code == 201
@@ -176,7 +176,7 @@ async def test_demo_account_book_quota_limit(
     # 2번째 도서 등록 (성공)
     r2 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 2", "author": "저자 2", "isbn": "9781000000002"},
+        json={"title": "도서 2", "author": "저자 2", "isbn": "9781000000016"},
         headers=demo_headers,
     )
     assert r2.status_code == 201
@@ -184,7 +184,7 @@ async def test_demo_account_book_quota_limit(
     # 3번째 도서 등록 -> Quota 초과로 403 차단
     r3 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 3", "author": "저자 3", "isbn": "9781000000003"},
+        json={"title": "도서 3", "author": "저자 3", "isbn": "9781000000023"},
         headers=demo_headers,
     )
     assert r3.status_code == 403
@@ -204,7 +204,7 @@ async def test_demo_account_scrap_quota_limit(
     # 도서 등록
     b_resp = await client.post(
         "/api/v1/library/books",
-        json={"title": "스크랩 테스트 도서", "author": "저자", "isbn": "9782000000001"},
+        json={"title": "스크랩 테스트 도서", "author": "저자", "isbn": "9782000000006"},
         headers=demo_headers,
     )
     book_id = b_resp.json()["bookId"]
@@ -274,13 +274,13 @@ async def test_normal_member_is_not_restricted(
     # 도서 2권 연속 등록 (상한 1권이지만 일반 회원이므로 2권 모두 성공)
     r1 = await client.post(
         "/api/v1/library/books",
-        json={"title": "일반 도서 1", "author": "저자 1", "isbn": "9783000000001"},
+        json={"title": "일반 도서 1", "author": "저자 1", "isbn": "9783000000003"},
     )
     assert r1.status_code == 201
 
     r2 = await client.post(
         "/api/v1/library/books",
-        json={"title": "일반 도서 2", "author": "저자 2", "isbn": "9783000000002"},
+        json={"title": "일반 도서 2", "author": "저자 2", "isbn": "9783000000010"},
     )
     assert r2.status_code == 201
 

@@ -20,3 +20,26 @@
   5. **프론트엔드 연동 참조**: 프론트엔드 독서 캘린더 단일 호출 연동 (`frontend-reader-web#115` 참조).
   6. **계층형 품질 검증**:
      - 백엔드 Tier 2: `uv run ruff format --check .` (110개 파일 통과), `uv run ruff check .` (0 에러), `uv run mypy .` (100개 파일 무결점), `uv run pytest -m "not integration" -x` (총 124개 테스트 100% 통과, 17.30s).
+
+
+## 2026-10-06: 공식 데모 계정(DEMO_MEMBER_ID) 도서 및 스크랩 삭제 권한 개방 (Phase 51)
+- **배경**:
+  - `dpyb@gmail.com` 공식 데모 계정에서 도서 삭제 및 스크랩 삭제 테스트를 직접 수행할 수 있도록 삭제 권한 개방 요청.
+  - 비밀번호 변경, 탈퇴, 프로필 수정 등 치명적 파괴 행위는 방어를 유지하면서, 도서/스크랩 삭제 작업만 Allowlist에 안전하게 추가.
+- **수행 내용**:
+  1. **미들웨어 Allowlist 수정 (`app/main.py`)**:
+     - `demo_allowed_write_routes`에 `("DELETE", "/api/v1/library/books/{book_id}")` 및 `("DELETE", "/api/v1/library/scraps/{scrap_id}")` 추가.
+  2. **가드 테스트 갱신 (`tests/test_demo_account_guard.py`)**:
+     - 데모 계정에서 도서 삭제(204 No Content) 및 스크랩 삭제(204 No Content) 성공 검증 반영.
+     - 비밀번호 변경, 회원 탈퇴, 프로필 수정, 임의 책장 생성 등 계정 파괴/탈취 행위의 403 차단 유지 검증.
+  3. **3-Tier 검증 통과**:
+     - Ruff format & check 100% 무결점.
+     - Mypy 정적 타입 체크 100% 무결점.
+     - 단위 테스트 124개 전수 통과 (15.93s).
+- **다음 세션에서 이어 진행할 작업**:
+  1. **게스트 스타터 가이드북(1권) 메타데이터 등록**:
+     - 스타터 가이드북 메타데이터 수신 시 `app/services/demo_seed_data.py`의 `GUEST_SEED_BOOKS`에 1권 전용 시드로 등록.
+  2. **청소부 크론 주기 단축 및 게스트 리셋 반영**:
+     - `.github/workflows/cleanup-demo.yml` 실행 주기를 다회(예: 3~4시간 간격)로 단축 및 `target=all` 리셋 연동.
+  3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
+     - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.

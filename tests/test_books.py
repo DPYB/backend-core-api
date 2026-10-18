@@ -103,7 +103,7 @@ async def test_update_book_full_payload(client: AsyncClient):
     update_req = {
         "title": "수정된 제목",
         "author": "수정된 저자",
-        "isbn": "9781234567890",
+        "isbn": "9781234567897",
         "genre": "LITERATURE",
         "kdc": "813.6",
         "subject": "한국소설",
@@ -541,12 +541,20 @@ async def test_book_registration_shelf_rank_safety(client: AsyncClient):
     # 동일 책장에 연속 등록 시 shelf_rank가 순차적으로 고유하게 증가하는지 검증
     ranks = []
     for i in range(1, 6):
+        raw12 = f"9791100000{i:02d}"
+        check = (
+            10
+            - (
+                sum(int(d) * (1 if idx % 2 == 0 else 3) for idx, d in enumerate(raw12))
+                % 10
+            )
+        ) % 10
         resp = await client.post(
             "/api/v1/library/books",
             json={
                 "title": f"연속 등록 도서 {i}",
                 "author": f"저자 {i}",
-                "isbn": f"97911000000{i:02d}",
+                "isbn": f"{raw12}{check}",
             },
         )
         assert resp.status_code == 201

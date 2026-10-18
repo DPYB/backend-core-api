@@ -6,6 +6,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidSearchParameterException
+from app.core.isbn import normalize_isbn
 from app.core.security import get_optional_member_id
 from app.db.session import get_db
 from app.models.library_book import LibraryBook
@@ -23,7 +24,7 @@ router = APIRouter(prefix="/api/v1/books", tags=["Book Discovery"])
 client = NationalLibraryClient()
 yes24_client = Yes24Client()
 
-ISBN_REGEX = re.compile(r"^(?:[0-9]{10}|[0-9]{13})$")
+ISBN_REGEX = re.compile(r"^(?:[0-9]{9}[0-9Xx]|[0-9]{13})$")
 
 
 @router.get("/search", response_model=BookSearchResponse)
@@ -41,11 +42,20 @@ async def search_book(
     """
     if isbn is not None:
         clean_isbn = isbn.strip()
-        if not clean_isbn or not ISBN_REGEX.match(clean_isbn):
+        cleaned_no_hyphen = re.sub(r"[-\s]", "", clean_isbn).upper()
+        if not cleaned_no_hyphen or not ISBN_REGEX.match(cleaned_no_hyphen):
             raise InvalidSearchParameterException(
                 "올바른 10자리 또는 13자리 숫자 ISBN을 입력해주세요."
             )
-        return await _search_by_isbn(db, clean_isbn, member_id)
+        try:
+            norm_isbn = normalize_isbn(clean_isbn)
+            if not norm_isbn:
+                raise ValueError()
+        except ValueError:
+            raise InvalidSearchParameterException(
+                "올바른 10자리 또는 13자리 숫자 ISBN을 입력해주세요."
+            )
+        return await _search_by_isbn(db, norm_isbn, member_id, query_str=clean_isbn)
 
     search_keyword = (query or "").strip()
     if not search_keyword:
@@ -53,9 +63,16 @@ async def search_book(
             "올바른 10자리 또는 13자리 숫자 ISBN 또는 검색 키워드를 입력해주세요."
         )
 
-    clean_digits = re.sub(r"[^0-9X]", "", search_keyword)
+    clean_digits = re.sub(r"[-\s]", "", search_keyword).upper()
     if ISBN_REGEX.match(clean_digits):
-        return await _search_by_isbn(db, clean_digits, member_id)
+        try:
+            norm_isbn = normalize_isbn(clean_digits)
+            if norm_isbn:
+                return await _search_by_isbn(
+                    db, norm_isbn, member_id, query_str=search_keyword
+                )
+        except ValueError:
+            pass
 
     # 1. YES24 키워드 검색 우선 시도
     yes24_items = await yes24_client.search_books(
@@ -182,8 +199,12 @@ async def search_book(
 
 
 async def _search_by_isbn(
-    db: AsyncSession, clean_isbn: str, member_id: uuid.UUID | None
+    db: AsyncSession,
+    clean_isbn: str,
+    member_id: uuid.UUID | None,
+    query_str: str | None = None,
 ) -> BookSearchResponse:
+    display_query = query_str or clean_isbn
     # 1. 내 서재에 이미 등록되어 있는지 확인
     registered_book = None
     if member_id:
@@ -197,7 +218,7 @@ async def _search_by_isbn(
 
     if registered_book:
         return BookSearchResponse(
-            query=clean_isbn,
+            query=display_query,
             total=1,
             items=[],
             already_registered=True,
@@ -232,7 +253,7 @@ async def _search_by_isbn(
         external_book = None
 
     return BookSearchResponse(
-        query=clean_isbn,
+        query=display_query,
         total=1 if external_book else 0,
         items=[],
         already_registered=False,

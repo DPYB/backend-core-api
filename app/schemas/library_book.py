@@ -3,6 +3,7 @@ from datetime import date, datetime
 from pydantic import Field, computed_field, field_validator, model_validator
 
 from app.core.exceptions import InvalidReorderTargetException
+from app.core.isbn import normalize_isbn
 from app.core.kdc_mapper import (
     GENRE_KOREAN_NAMES,
     parse_to_date,
@@ -28,6 +29,13 @@ class CreateLibraryBookRequest(CamelModel):
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
     shelf_id: int | None = None
+
+    @field_validator("isbn", mode="before")
+    @classmethod
+    def validate_and_normalize_isbn(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        return normalize_isbn(str(v))
 
     @field_validator("published_date", mode="before")
     @classmethod
@@ -205,6 +213,13 @@ class UpdateLibraryBookRequest(CamelModel):
     genre_source: str | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
+
+    @field_validator("isbn", mode="before")
+    @classmethod
+    def validate_and_normalize_isbn(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        return normalize_isbn(str(v))
 
     @field_validator("published_date", mode="before")
     @classmethod
