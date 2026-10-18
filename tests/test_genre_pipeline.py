@@ -6,7 +6,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import GenreType
-from app.schemas.search import ExternalBook
+from app.schemas.search import BookSearchItem, ExternalBook
 from app.services.ai_agent import AiAgentClient, ClassifyGenreResult
 from app.services.national_library import NationalLibraryClient
 from app.services.yes24 import Yes24Client
@@ -542,3 +542,516 @@ async def test_create_and_update_book_invalid_genre_source_rejected(
     )
     assert resp_update.status_code == 400
     assert resp_update.json()["code"] == "INVALID_BOOK_DATA"
+
+
+# ============================================================================
+# Phase 57 후속: YES24 서지 보완 2차 검색(Fallback) 및 엄격 ISBN 매칭 검증 테스트
+# [주의] 모든 테스트는 외부 API를 직접 호출하지 않는 Mock 기반 단위/통합 테스트임.
+# ============================================================================
+
+
+def test_yes24_clean_title_and_author_query_utils():
+    """[Mock 기반 테스트] YES24 검색 질의어 정제 유틸리티 단위 검증 (부제목/괄호/역할어 정제 및 원본 불변)"""
+    client = Yes24Client(api_key="mock-key")
+
+    # 1. 제목 정제 검증
+    # 부제목(:) 및 괄호 제거
+    raw_title_1 = "클린 코드: 애자일 소프트웨어 장인 정신 (개정판)"
+    assert client._clean_title_for_query(raw_title_1) == "클린 코드"
+    # 대괄호 및 등호 제거
+    raw_title_2 = "달과 6펜스 [민음사 세계문학전집] = The Moon and Sixpence"
+    assert client._clean_title_for_query(raw_title_2) == "달과 6펜스"
+    # 원본 문자열은 변경되지 않음 검증
+    assert raw_title_1 == "클린 코드: 애자일 소프트웨어 장인 정신 (개정판)"
+
+    # 2. 저자 정제 검증
+    # 접두어(지은이:, 저자:) 및 접미어(지음, 옮김) 제거
+    raw_author_1 = "지은이: 서머싯 몸 지음 ; 송무 옮김"
+    assert client._clean_author_for_query(raw_author_1) == "서머싯 몸"
+    raw_author_2 = "저자: 로버트 C. 마틴 저"
+    assert client._clean_author_for_query(raw_author_2) == "로버트 C 마틴"
+    # 외곽 대괄호/소괄호에 둘러싸인 역할 접두어 정제 검증
+    raw_author_3 = "[지은이: 홍길동]"
+    assert client._clean_author_for_query(raw_author_3) == "홍길동"
+    raw_author_4 = "(저자: 이순신)"
+    assert client._clean_author_for_query(raw_author_4) == "이순신"
+    raw_author_5 = "[홍길동]"
+    assert client._clean_author_for_query(raw_author_5) == "홍길동"
+    # 원본 문자열 불변 검증
+    assert raw_author_1 == "지은이: 서머싯 몸 지음 ; 송무 옮김"
+    assert raw_author_3 == "[지은이: 홍길동]"
+
+
+@pytest.mark.asyncio
+async def test_yes24_lookup_by_title_and_author_cache_and_isbn_scope(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """[Mock 기반 테스트] YES24 2차 보완 검색의 캐싱 동작 및 대상 ISBN 격리 검증"""
+    client = Yes24Client(api_key="mock-key")
+    call_count = 0
+
+    async def mock_get(self, url, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "items": [
+                        {
+                            "title": "클린 코드",
+                            "author": "로버트 C. 마틴",
+                            "isbn13": "9788966260959",
+                            "goodsNo": "11111",
+                            "pages": 464,
+                        }
+                    ]
+                },
+            },
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    target_isbn_1 = "9788966260959"
+    # 1. 첫 번째 호출 -> 네트워크 mock 호출 (call_count = 1)
+    item_1 = await client.lookup_by_title_and_author(
+        title="클린 코드: 부제목",
+        author="로버트 C. 마틴 저",
+        clean_isbn=target_isbn_1,
+    )
+    assert item_1 is not None
+    assert item_1.isbn == "9788966260959"
+    assert call_count == 1
+
+    # 2. 동일 ISBN 및 동일 쿼리로 두 번째 호출 -> 캐시 히트 (call_count 그대로 1)
+    item_2 = await client.lookup_by_title_and_author(
+        title="클린 코드: 부제목",
+        author="로버트 C. 마틴 저",
+        clean_isbn=target_isbn_1,
+    )
+    assert item_2 == item_1
+    assert call_count == 1
+
+    # 3. 다른 ISBN으로 호출 시 이전 캐시를 재사용하지 않음 검증 (call_count = 2)
+    target_isbn_other = "9788950958749"
+    item_other = await client.lookup_by_title_and_author(
+        title="클린 코드: 부제목",
+        author="로버트 C. 마틴 저",
+        clean_isbn=target_isbn_other,
+    )
+    # 다른 ISBN이므로 후보의 9788966260959와 불일치하여 None 반환
+    assert item_other is None
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_2_success(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 2][Mock 기반 테스트] YES24 1차 ISBN 실패 -> 국립도서관 제목/저자 기반 YES24 2차 보완 검색 성공 융합 검증"""
+    target_isbn = "9788966260959"
+
+    # 1. YES24 1차 ISBN 검색은 실패(None)
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    # 2. 국립중앙도서관 정식 서지 검색 성공
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="클린 코드 : 애자일 소프트웨어 장인 정신",
+            author="로버트 C. 마틴 지음 ; 박재호 옮김",
+            isbn=isbn,
+            genre=GenreType.TECHNOLOGY,
+            kdc="005.133",
+            subject="소프트웨어공학",
+            publisher="인사이트",
+            published_date="2013-12-24",
+        )
+
+    # 3. YES24 2차 보완 검색 성공 (후보 도서 ISBN 일치)
+    async def mock_yes24_lookup_fallback(
+        self, title: str, author: str, clean_isbn: str
+    ):
+        return BookSearchItem(
+            title="클린 코드 Clean Code",
+            author="로버트 C. 마틴 저 / 박재호 역",
+            isbn=clean_isbn,
+            publisher="인사이트",
+            total_pages=464,
+            description="더 나은 코드를 작성하기 위한 실무 지침서",
+            cover_url="https://image.yes24.com/goods/12345/L",
+            side_cover_url="https://image.yes24.com/goods/12345/S",
+            link="https://www.yes24.com/Product/Goods/12345",
+        )
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+    monkeypatch.setattr(
+        Yes24Client, "lookup_by_title_and_author", mock_yes24_lookup_fallback
+    )
+
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    book = data["book"]
+    assert book is not None
+
+    # 국립도서관 SSOT 보존 검증 (원본 title, author, kdc, genre 보존)
+    assert book["title"] == "클린 코드 : 애자일 소프트웨어 장인 정신"
+    assert book["author"] == "로버트 C. 마틴 지음 ; 박재호 옮김"
+    assert book["kdc"] == "005.133"
+    assert book["genre"] == "TECHNOLOGY"
+    assert book["subject"] == "소프트웨어공학"
+    assert book["genreSource"] == "KDC"
+
+    # YES24 2차 보완 메타데이터 융합 검증
+    assert book["totalPages"] == 464
+    assert book["description"] == "더 나은 코드를 작성하기 위한 실무 지침서"
+    assert book["coverUrl"] == "https://image.yes24.com/goods/12345/L"
+    assert book["sideCoverUrl"] == "https://image.yes24.com/goods/12345/S"
+    assert book["link"] == "https://www.yes24.com/Product/Goods/12345"
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_3_author_mismatch_rejected(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 3][Mock 기반 테스트] 제목은 같지만 저자가 다른 도서가 반환된 경우 불일치 판정 및 도서관 데이터 단독 반환 검증"""
+    yes24_inst = Yes24Client(api_key="mock-key")
+    orig_get = httpx.AsyncClient.get
+
+    async def mock_get(self, url, **kwargs):
+        if "/api/v1" in str(url) or "test" in str(url):
+            return await orig_get(self, url, **kwargs)
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "items": [
+                        {
+                            "title": "클린 코드",
+                            "author": "김철수",  # 저자가 완전히 다름
+                            "isbn13": "9788966260959",
+                            "goodsNo": "99999",
+                            "pages": 500,
+                            "contentDetail": {"bookIntroduction": "오염된 소개글"},
+                        }
+                    ]
+                },
+            },
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    # 1. Yes24Client 단위 검증: 저자 불일치로 안전 기각 (None 반환)
+    result = await yes24_inst.lookup_by_title_and_author(
+        title="클린 코드",
+        author="로버트 C. 마틴",
+        clean_isbn="9788966260959",
+    )
+    assert result is None
+
+    # 2. Search API 엔드포인트 검증: YES24 1차 실패 + 도서관 성공 + YES24 2차 저자 불일치 기각 -> 순수 도서관 서지 단독 반환
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="클린 코드 : 원본 도서",
+            author="로버트 C. 마틴",
+            isbn=isbn,
+            genre=GenreType.TECHNOLOGY,
+            kdc="005.133",
+            subject="소프트웨어공학",
+        )
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+
+    target_isbn = "9788966260959"
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp.status_code == 200
+    book = resp.json()["book"]
+    assert book["title"] == "클린 코드 : 원본 도서"
+    assert book["author"] == "로버트 C. 마틴"
+    assert book["link"] is None
+    assert book["totalPages"] is None
+    assert book["description"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_4_different_isbn_rejected(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 4][Mock 기반 테스트] 제목/저자는 유사하나 ISBN이 다른 비일치 서적(다른 판본/e-book) 안전 기각 및 도서관 단독 반환 검증"""
+    yes24_inst = Yes24Client(api_key="mock-key")
+    orig_get = httpx.AsyncClient.get
+
+    async def mock_get(self, url, **kwargs):
+        if "/api/v1" in str(url) or "test" in str(url):
+            return await orig_get(self, url, **kwargs)
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "items": [
+                        {
+                            "title": "클린 코드 (전자책)",
+                            "author": "로버트 C. 마틴",
+                            "isbn13": "9788966269999",  # 다른 판본 ISBN
+                            "goodsNo": "88888",
+                            "pages": 400,
+                        }
+                    ]
+                },
+            },
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    # 1. Yes24Client 단위 검증: ISBN 불일치로 안전 기각 (None 반환)
+    result = await yes24_inst.lookup_by_title_and_author(
+        title="클린 코드",
+        author="로버트 C. 마틴",
+        clean_isbn="9788966260959",
+    )
+    assert result is None
+
+    # 2. Search API 엔드포인트 검증: 도서관 단독 반환
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="클린 코드 : 종이책 원본",
+            author="로버트 C. 마틴",
+            isbn=isbn,
+            genre=GenreType.TECHNOLOGY,
+            kdc="005.133",
+            subject="소프트웨어공학",
+        )
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+
+    target_isbn = "9788966260959"
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp.status_code == 200
+    book = resp.json()["book"]
+    assert book["title"] == "클린 코드 : 종이책 원본"
+    assert book["link"] is None
+    assert book["totalPages"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_5_isbn10_candidate_normalized_match(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """[시나리오 5][Mock 기반 테스트] YES24 재검색 결과가 ISBN-10이고 요청이 ISBN-13인 경우 정규화 매칭 채택 검증"""
+    client = Yes24Client(api_key="mock-key")
+
+    # 8950958740(10자리) -> 9788950958749(13자리)
+    async def mock_get(self, url, **kwargs):
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "items": [
+                        {
+                            "title": "그림의 힘",
+                            "author": "김선현",
+                            "isbn10": "8950958740",  # 10자리 구형 표기
+                            "goodsNo": "55555",
+                            "pages": 300,
+                        }
+                    ]
+                },
+            },
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    result = await client.lookup_by_title_and_author(
+        title="그림의 힘",
+        author="김선현",
+        clean_isbn="9788950958749",  # 13자리 요청
+    )
+    assert result is not None
+    assert result.total_pages == 300
+    assert result.link == "https://www.yes24.com/Product/Goods/55555"
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_6_empty_results(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 6][Mock 기반 테스트] 제목·저자 재검색에서도 YES24 결과가 빈 배열(0건)인 경우 도서관 단독 반환 검증"""
+    target_isbn = "9788950958749"
+
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="국립도서관 단독 서지 도서",
+            author="도서관 저자",
+            isbn=isbn,
+            genre=GenreType.LITERATURE,
+            kdc="813.6",
+            subject="한국소설",
+        )
+
+    async def mock_yes24_lookup_fallback(
+        self, title: str, author: str, clean_isbn: str
+    ):
+        return None
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+    monkeypatch.setattr(
+        Yes24Client, "lookup_by_title_and_author", mock_yes24_lookup_fallback
+    )
+
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    book = data["book"]
+    assert book["title"] == "국립도서관 단독 서지 도서"
+    assert book["link"] is None
+    assert book["totalPages"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_7_http_error_or_timeout(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 7][Mock 기반 테스트] YES24 2차 재검색 시 타임아웃/HTTP 오류 발생 시 500 없이 도서관 단독 안전 반환 검증"""
+    target_isbn = "9788950958749"
+
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="타임아웃 안전 방어 도서",
+            author="안전 저자",
+            isbn=isbn,
+            genre=GenreType.PHILOSOPHY,
+            kdc="180",
+            subject="철학",
+        )
+
+    async def mock_yes24_fallback_raise(self, title: str, author: str, clean_isbn: str):
+        raise httpx.TimeoutException("YES24 2차 검색 타임아웃")
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+    monkeypatch.setattr(
+        Yes24Client, "lookup_by_title_and_author", mock_yes24_fallback_raise
+    )
+
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    # 500 Internal Server Error가 발생하지 않고 200 OK로 안전 반환
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 1
+    assert data["book"]["title"] == "타임아웃 안전 방어 도서"
+    assert data["book"]["link"] is None
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_fallback_scenario_10_safe_metadata_preservation(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """[시나리오 10][Mock 기반 테스트] YES24 메타데이터 안전 보완 불가 시 국립도서관 정식 서지(제목, 저자, KDC, 장르) 무오염 보존 검증"""
+    target_isbn = "9788937462566"
+
+    async def mock_yes24_lookup_isbn(self, isbn: str):
+        return None
+
+    async def mock_nl_lookup(self, isbn: str):
+        return ExternalBook(
+            title="달과 6펜스 : 서머싯 몸 장편소설 (양장본)",
+            author="서머싯 몸 지음 ; 송무 옮김",
+            isbn=isbn,
+            genre=GenreType.LITERATURE,
+            kdc="843",
+            subject="영미문학",
+            publisher="민음사",
+            published_date="2000-11-20",
+        )
+
+    # YES24 2차 검색에서 불일치 결과 반환 모사 (None 반환)
+    async def mock_yes24_lookup_fallback(
+        self, title: str, author: str, clean_isbn: str
+    ):
+        return None
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_lookup_isbn)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_lookup)
+    monkeypatch.setattr(
+        Yes24Client, "lookup_by_title_and_author", mock_yes24_lookup_fallback
+    )
+
+    resp = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp.status_code == 200
+    book = resp.json()["book"]
+    assert book is not None
+    # 국립도서관 원본 서지 정보가 부제목이나 괄호 손상 없이 100% 원형 보존되었는지 검증
+    assert book["title"] == "달과 6펜스 : 서머싯 몸 장편소설 (양장본)"
+    assert book["author"] == "서머싯 몸 지음 ; 송무 옮김"
+    assert book["publisher"] == "민음사"
+    assert book["kdc"] == "843"
+    assert book["genre"] == "LITERATURE"
+    assert book["subject"] == "영미문학"
+    assert book["genreSource"] == "KDC"
+    # YES24 상업 링크 및 표지는 안전하게 None 유지
+    assert book["link"] is None
+
+
+@pytest.mark.asyncio
+async def test_yes24_lookup_by_title_and_author_timeout_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """[Mock 기반 테스트] 2차 서지 보완 검색 시 httpx.AsyncClient 타임아웃이 3.0초로 단축 설정되는지 검증"""
+    client = Yes24Client(api_key="mock-key")
+    observed_timeout = None
+
+    orig_init = httpx.AsyncClient.__init__
+
+    def mock_init(self, *args, **kwargs):
+        nonlocal observed_timeout
+        observed_timeout = kwargs.get("timeout")
+        orig_init(self, *args, **kwargs)
+
+    async def mock_get(self, url, **kwargs):
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={"success": True, "data": {"items": []}},
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", mock_init)
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    await client.lookup_by_title_and_author(
+        title="타임아웃 확인 도서",
+        author="저자",
+        clean_isbn="9788950958749",
+    )
+    assert observed_timeout == 3.0

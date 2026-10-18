@@ -274,18 +274,31 @@ async def _search_by_isbn(
 
     yes24_item, nl_book = await asyncio.gather(fetch_yes24(), fetch_nl())
 
+    # 1차 ISBN 검색에서 YES24 결과가 없고 국립중앙도서관 결과가 있는 경우:
+    # 국립도서관의 제목·저자를 기반으로 YES24 2차 보완 검색 수행 (동일 ISBN 엄격 매칭)
+    if not yes24_item and nl_book and nl_book.title:
+        try:
+            yes24_item = await yes24_client.lookup_by_title_and_author(
+                title=nl_book.title,
+                author=nl_book.author or "",
+                clean_isbn=clean_isbn,
+            )
+        except Exception as e:
+            logger.warning(f"YES24 2차 서지 보완 검색 실패: {e} (ISBN: {clean_isbn})")
+            yes24_item = None
+
     external_book: ExternalBook | None = None
     if yes24_item and nl_book:
-        # 양쪽 모두 성공 시: YES24(소개글, 쪽수, 표지, 링크) + 국립도서관(KDC, 장르, 주제어) 융합
+        # 양쪽 모두 성공 시: YES24(소개글, 쪽수, 표지, 링크) + 국립도서관(KDC, 장르, 주제어, 서지명) 융합
         external_book = ExternalBook(
-            title=yes24_item.title or nl_book.title,
-            author=yes24_item.author or nl_book.author,
+            title=nl_book.title or yes24_item.title,
+            author=nl_book.author or yes24_item.author,
             isbn=clean_isbn,
             genre=nl_book.genre,
             kdc=nl_book.kdc,
             subject=nl_book.subject,
-            publisher=yes24_item.publisher or nl_book.publisher,
-            published_date=yes24_item.published_date or nl_book.published_date,
+            publisher=nl_book.publisher or yes24_item.publisher,
+            published_date=nl_book.published_date or yes24_item.published_date,
             total_pages=yes24_item.total_pages or nl_book.total_pages,
             cover_url=yes24_item.cover_url or nl_book.cover_url,
             side_cover_url=yes24_item.side_cover_url or nl_book.side_cover_url,
