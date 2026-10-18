@@ -153,7 +153,7 @@ async def test_guest_quota_enforcement(
     # 도서 2권 등록 (성공)
     r1 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 1", "author": "저자 1", "isbn": "9781000000011"},
+        json={"title": "도서 1", "author": "저자 1", "isbn": "9781000000016"},
         headers=headers,
     )
     assert r1.status_code == 201
@@ -161,7 +161,7 @@ async def test_guest_quota_enforcement(
 
     r2 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 2", "author": "저자 2", "isbn": "9781000000012"},
+        json={"title": "도서 2", "author": "저자 2", "isbn": "9781000000023"},
         headers=headers,
     )
     assert r2.status_code == 201
@@ -169,7 +169,7 @@ async def test_guest_quota_enforcement(
     # 도서 3번째 등록 -> 403 DEMO_QUOTA_EXCEEDED
     r3 = await client.post(
         "/api/v1/library/books",
-        json={"title": "도서 3", "author": "저자 3", "isbn": "9781000000013"},
+        json={"title": "도서 3", "author": "저자 3", "isbn": "9781000000030"},
         headers=headers,
     )
     assert r3.status_code == 403
@@ -218,7 +218,7 @@ async def test_cover_url_sanitization(
         json={
             "title": "악성 표지 도서",
             "author": "공격자",
-            "isbn": "9781111111119",
+            "isbn": "9781111111113",
             "coverUrl": "https://evil-attacker.com/malicious.png",
         },
         headers=headers,
@@ -226,7 +226,7 @@ async def test_cover_url_sanitization(
     assert resp_evil_isbn.status_code == 201
     assert (
         resp_evil_isbn.json()["coverUrl"]
-        == "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9781111111119.jpg"
+        == "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9781111111113.jpg"
     )
 
     # 2) 도메인 스푸핑 + ISBN 없는 경우 -> /books.webp 로 정제
@@ -252,7 +252,7 @@ async def test_cover_url_sanitization(
         json={
             "title": "정상 표지 도서",
             "author": "정상 작가",
-            "isbn": "9781111111117",
+            "isbn": "9781111111120",
             "coverUrl": valid_kyobo_url,
         },
         headers=headers,
@@ -276,7 +276,7 @@ async def test_guest_scrap_image_sanitization_vs_member_base64(
     # 1. 게스트 도서 등록 및 스크랩 생성
     g_book = await client.post(
         "/api/v1/library/books",
-        json={"title": "게스트 책", "author": "저자", "isbn": "9782000000001"},
+        json={"title": "게스트 책", "author": "저자", "isbn": "9782000000006"},
         headers=guest_headers,
     )
     g_book_id = g_book.json()["bookId"]
@@ -297,7 +297,7 @@ async def test_guest_scrap_image_sanitization_vs_member_base64(
     # 2. 일반 회원(기본 클라이언트) 도서 등록 및 스크랩 생성
     m_book = await client.post(
         "/api/v1/library/books",
-        json={"title": "회원 책", "author": "저자", "isbn": "9782000000002"},
+        json={"title": "회원 책", "author": "저자", "isbn": "9782000000013"},
     )
     m_book_id = m_book.json()["bookId"]
 
@@ -322,7 +322,7 @@ async def test_large_scrap_payload_limit(client: AsyncClient):
     """
     book_resp = await client.post(
         "/api/v1/library/books",
-        json={"title": "테스트 도서", "author": "저자", "isbn": "9783000000001"},
+        json={"title": "테스트 도서", "author": "저자", "isbn": "9783000000003"},
     )
     book_id = book_resp.json()["bookId"]
 
@@ -360,7 +360,7 @@ async def test_guest_isolation_from_demo_account(
         json={
             "title": "발표용 특수 도서",
             "author": "발표자",
-            "isbn": "9784000000001",
+            "isbn": "9784000000000",
         },
         headers=demo_headers,
     )
@@ -373,7 +373,7 @@ async def test_guest_isolation_from_demo_account(
         json={
             "title": "게스트의 체험 도서",
             "author": "방문객",
-            "isbn": "9784000000002",
+            "isbn": "9784000000017",
         },
         headers=guest_headers,
     )
@@ -384,15 +384,15 @@ async def test_guest_isolation_from_demo_account(
     d_list = await client.get("/api/v1/library/books", headers=demo_headers)
     assert d_list.status_code == 200
     d_isbns = [b["isbn"] for b in d_list.json()["books"]]
-    assert "9784000000001" in d_isbns
-    assert "9784000000002" not in d_isbns
+    assert "9784000000000" in d_isbns
+    assert "9784000000017" not in d_isbns
 
     # 4. 게스트 서재 조회 -> 게스트 도서가 조회되고 발표용 특수 도서는 없음
     g_list = await client.get("/api/v1/library/books", headers=guest_headers)
     assert g_list.status_code == 200
     g_isbns = [b["isbn"] for b in g_list.json()["books"]]
-    assert "9784000000002" in g_isbns
-    assert "9784000000001" not in g_isbns
+    assert "9784000000017" in g_isbns
+    assert "9784000000000" not in g_isbns
 
     # 5. 게스트가 자기 도서 삭제
     del_g = await client.delete(
@@ -426,7 +426,7 @@ async def test_guest_record_rate_limit_by_ip(
     # 도서 1권 등록
     b_resp = await client.post(
         "/api/v1/library/books",
-        json={"title": "기록용 도서", "author": "저자", "isbn": "9785000000001"},
+        json={"title": "기록용 도서", "author": "저자", "isbn": "9785000000007"},
         headers=guest_headers,
     )
     book_id = b_resp.json()["bookId"]
@@ -497,7 +497,7 @@ async def test_kill_switch_read_200_write_403(client: AsyncClient):
     # 쓰기는 403 GUEST_READONLY_MODE 차단
     post_resp = await client.post(
         "/api/v1/library/books",
-        json={"title": "차단될 도서", "author": "저자", "isbn": "9781234567890"},
+        json={"title": "차단될 도서", "author": "저자", "isbn": "9781234567897"},
         headers=guest_headers,
     )
     assert post_resp.status_code == 403

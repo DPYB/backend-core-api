@@ -80,7 +80,7 @@ class BookService:
                 raise ShelfAccessDeniedException("해당 책장에 대한 권한이 없습니다.")
 
         # 2. ISBN 중복 확인
-        clean_isbn = req.isbn.strip() if req.isbn else None
+        clean_isbn = req.isbn.strip() if req.isbn and req.isbn.strip() else None
         if clean_isbn:
             dup_stmt = select(LibraryBook).where(
                 LibraryBook.member_id == member_id,
@@ -441,7 +441,7 @@ class BookService:
                 "해당 도서에 대한 접근 권한이 없습니다."
             )
 
-        clean_isbn = req.isbn.strip() if req.isbn else None
+        clean_isbn = req.isbn.strip() if req.isbn and req.isbn.strip() else None
         if clean_isbn and clean_isbn != book.isbn:
             dup_stmt = select(LibraryBook).where(
                 LibraryBook.member_id == member_id,

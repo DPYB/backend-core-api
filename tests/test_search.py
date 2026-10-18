@@ -95,7 +95,7 @@ async def test_search_unregistered_book_not_found(client: AsyncClient):
         "app.routers.search.client.lookup_by_isbn", new_callable=AsyncMock
     ) as mock_lookup:
         mock_lookup.return_value = None
-        resp = await client.get("/api/v1/books/search?isbn=9999999999999")
+        resp = await client.get("/api/v1/books/search?isbn=9999999999994")
         assert resp.status_code == 200
         data = resp.json()
         assert data["alreadyRegistered"] is False
@@ -202,7 +202,7 @@ async def test_national_library_timeout_graceful_fallback(client: AsyncClient):
         side_effect=httpx.ReadTimeout("외부 API 응답 시간 초과"),
     ):
         # 1. 클라이언트 레벨 graceful fallback (예외 없이 None 반환)
-        res = await nl_client.lookup_by_isbn("9791100000003")
+        res = await nl_client.lookup_by_isbn("9791100000007")
         assert res is None
 
     # 2. 검색 API 엔드포인트 레벨 통합 검증: 국립중앙도서관 타임아웃 발생 시에도 500 대신 200 OK와 book: None 반환
@@ -210,7 +210,7 @@ async def test_national_library_timeout_graceful_fallback(client: AsyncClient):
         "app.routers.search.client.lookup_by_isbn",
         side_effect=httpx.ReadTimeout("외부 도서관 타임아웃"),
     ):
-        api_resp = await client.get("/api/v1/books/search?isbn=9791100000003")
+        api_resp = await client.get("/api/v1/books/search?isbn=9791100000007")
         assert api_resp.status_code == 200
         data = api_resp.json()
         assert data["alreadyRegistered"] is False
