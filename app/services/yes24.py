@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from app.config import settings
+from app.core.isbn import normalize_isbn
 from app.core.kdc_mapper import parse_to_date
 from app.schemas.search import BookSearchItem
 from app.services.national_library import get_verified_cover_url
@@ -246,20 +247,35 @@ class Yes24Client:
         if not data.get("success"):
             return None
 
+        norm_clean = None
+        try:
+            norm_clean = normalize_isbn(clean_isbn)
+        except ValueError:
+            pass
+
         raw_items = data.get("data", {}).get("items", [])
         for it in raw_items:
             item = self._parse_book_item(it)
             if not item:
                 continue
             item_clean = re.sub(r"[-\s]", "", item.isbn).upper()
-            if item_clean == clean_isbn or (clean_isbn in item_clean):
+            norm_item = None
+            try:
+                norm_item = normalize_isbn(item_clean)
+            except ValueError:
+                pass
+
+            is_match = (
+                item_clean == clean_isbn
+                or (
+                    norm_clean is not None
+                    and norm_item is not None
+                    and norm_clean == norm_item
+                )
+                or (len(clean_isbn) >= 10 and clean_isbn in item_clean)
+            )
+            if is_match:
                 self._cache[cache_key] = ([item], now + self.DEFAULT_TTL_SECONDS)
                 return item
-
-        if raw_items:
-            first_item = self._parse_book_item(raw_items[0])
-            if first_item:
-                self._cache[cache_key] = ([first_item], now + self.DEFAULT_TTL_SECONDS)
-                return first_item
 
         return None

@@ -12,6 +12,8 @@ from app.core.kdc_mapper import (
 from app.models.enums import BookReadingStatus, GenreType
 from app.schemas.common import CamelModel, PaginatedResponse
 
+ALLOWED_GENRE_SOURCES: set[str] = {"KDC", "LLM", "KDC_FALLBACK", "USER"}
+
 
 class CreateLibraryBookRequest(CamelModel):
     title: str = Field(..., min_length=1, max_length=200)
@@ -30,6 +32,18 @@ class CreateLibraryBookRequest(CamelModel):
     total_pages: int | None = Field(None, ge=1)
     current_page: int = Field(0, ge=0)
     shelf_id: int | None = None
+
+    @field_validator("genre_source", mode="before")
+    @classmethod
+    def validate_genre_source(cls, v: object) -> str:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return "KDC"
+        val = str(v).strip().upper()
+        if val not in ALLOWED_GENRE_SOURCES:
+            raise ValueError(
+                f"유효하지 않은 장르 출처(genre_source)입니다: {v}. 허용 값: {sorted(ALLOWED_GENRE_SOURCES)}"
+            )
+        return val
 
     @field_validator("isbn", mode="before")
     @classmethod
@@ -218,6 +232,18 @@ class UpdateLibraryBookRequest(CamelModel):
     genre_confidence: float | None = None
     reading_status: BookReadingStatus
     total_pages: int | None = Field(None, ge=1)
+
+    @field_validator("genre_source", mode="before")
+    @classmethod
+    def validate_genre_source(cls, v: object) -> str | None:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        val = str(v).strip().upper()
+        if val not in ALLOWED_GENRE_SOURCES:
+            raise ValueError(
+                f"유효하지 않은 장르 출처(genre_source)입니다: {v}. 허용 값: {sorted(ALLOWED_GENRE_SOURCES)}"
+            )
+        return val
 
     @field_validator("isbn", mode="before")
     @classmethod

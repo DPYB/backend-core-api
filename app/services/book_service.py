@@ -161,24 +161,35 @@ class BookService:
                         LibraryBook.genre_source != "USER",
                         LibraryBook.deleted_at.is_(None),
                     )
-                    .order_by(LibraryBook.id.desc())
+                    .order_by(
+                        (LibraryBook.genre_source == "LLM").desc(),
+                        LibraryBook.id.desc(),
+                    )
                     .limit(1)
                 )
                 cached_book = (await db.execute(cache_stmt)).scalars().first()
 
+            use_cached = False
             if cached_book and cached_book.genre != GenreType.NONE:
-                if final_genre == GenreType.NONE:
-                    final_genre = cached_book.genre
-                final_subject = final_subject or cached_book.subject
+                if cached_book.genre_source == "LLM" or final_genre == GenreType.NONE:
+                    use_cached = True
+
+            if use_cached and cached_book:
+                final_genre = cached_book.genre
+                if cached_book.genre_source == "LLM":
+                    final_subject = cached_book.subject or final_subject
+                else:
+                    final_subject = final_subject or cached_book.subject
                 final_kdc = final_kdc or cached_book.kdc
                 final_genre_source = cached_book.genre_source
                 final_genre_confidence = cached_book.genre_confidence
                 logger.info(
-                    "ISBN %s 동일 도서 장르 캐시 재사용 (장르: %s, 주제: %s, 출처: %s)",
+                    "ISBN %s 동일 도서 장르 캐시 재사용 (장르: %s, 주제: %s, 출처: %s, 신뢰도: %s)",
                     clean_isbn,
                     final_genre,
                     final_subject,
                     final_genre_source,
+                    final_genre_confidence,
                 )
             else:
                 ai_agent_client = AiAgentClient()

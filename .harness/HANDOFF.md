@@ -11,17 +11,19 @@
      - `LibraryBook` ORM 모델 및 Pydantic DTO(`CreateLibraryBookRequest`, `LibraryBookItemResponse`, `LibraryBookDetailResponse`, `UpdateLibraryBookRequest`, `UpdateLibraryBookResponse`, `ExternalBook`, `SearchLibraryBookDetail`, `BookSearchItem`) 동기화.
   2. **YES24 단건 조회 및 상품 링크 지원 (`app/services/yes24.py`)**:
      - `lookup_by_isbn(isbn: str)` 단건 조회 및 15분 TTL 캐싱 구축, 상품 상세 URL(`link`) 파싱 지원.
+     - 불일치 ISBN 첫 번째 결과 채택 안티패턴 제거 및 정규화 기반 엄격한 ISBN 일치 검사 구축.
   3. **AiAgentClient 신설 및 Graceful Fallback (`app/services/ai_agent.py`)**:
      - `classify_genre` 비동기 클라이언트 구현 (`POST /api/v1/classify-genre`).
      - 2.5초 하드 타임아웃(`httpx.Timeout(2.5)`) 및 외부 에러/지연 시 KDC 기반 `parse_to_genre_and_subject` Graceful Fallback (`source="KDC_FALLBACK"`).
-  4. **도서 등록 캐시 재사용 및 사용자 수정 보호 (`app/services/book_service.py`)**:
-     - `create_book`: 동일 ISBN 기등록 도서 탐색 시 `genre_source != 'USER'`인 경우에만 기존 장르/주제/신뢰도 재사용 (LLM 호출 $0 최적화).
+  4. **도서 등록 캐시 재사용, 일관성 보장 및 사용자 수정 보호 (`app/services/book_service.py`)**:
+     - `create_book`: 동일 ISBN 기등록 도서 탐색 시 `genre_source != 'USER'`인 경우 기존 장르/주제/신뢰도 재사용 (LLM 호출 $0 최적화).
+     - LLM 캐시 히트 시 장르/출처/신뢰도 일관성 보장(기존 요청 KDC 장르가 있더라도 LLM 캐시 장르로 승격) 및 `genre_source` 4대 허용값(`ALLOWED_GENRE_SOURCES`) 검증.
      - 사용자 수동 입력/수정(`genre_source == 'USER'`)은 AI 분류 결과로 덮어쓰지 않고 최우선 보존.
   5. **서지 검색 병렬 융합 (`app/routers/search.py`)**:
-     - `_search_by_isbn`: `asyncio.gather`로 YES24와 국립중앙도서관 동시 조회 후 메타데이터 우선순위 합성.
+     - `_search_by_isbn`: `asyncio.gather`로 YES24와 국립중앙도서관 동시 조회 후 메타데이터 우선순위 합성 (편측 실패 격리).
   6. **3-Tier 품질 검증 통과**:
-     - `tests/test_ai_agent.py` (6종), `tests/test_genre_pipeline.py` (6종) 단위/통합 테스트 신설.
-     - 163개 단위 테스트 전수 통과 (15.31s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
+     - `tests/test_ai_agent.py` (6종), `tests/test_genre_pipeline.py` (11종) 단위/통합 테스트 신설.
+     - 168개 단위 테스트 전수 통과 (19.23s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
 - **다음 세션에서 이어 진행할 작업**:
   1. **Phase 57 PR 생성 및 develop 머지 지원**:
      - 로컬 커밋 상태 점검 후 PR 생성 및 CI 통과 확인.

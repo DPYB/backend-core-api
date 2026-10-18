@@ -283,3 +283,262 @@ async def test_search_by_isbn_parallel_fusion(
     assert fused_book["kdc"] == "004.7"
     assert fused_book["genre"] == "TECHNOLOGY"
     assert fused_book["subject"] == "IT/인공지능"
+
+
+@pytest.mark.asyncio
+async def test_create_book_genre_cache_reuse_with_existing_request_genre(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """요청에 KDC 장르가 이미 있더라도 캐시된 LLM 장르를 만났을 때 올바르게 승격 및 출처/신뢰도 일관성 검증"""
+    ai_call_count = 0
+
+    async def mock_classify_genre(
+        self, title, author="", description=None, kdc=None, isbn=None
+    ):
+        nonlocal ai_call_count
+        ai_call_count += 1
+        return ClassifyGenreResult(
+            genre=GenreType.PHILOSOPHY,
+            subject="미술치료/심리",
+            confidence=0.96,
+            source="LLM",
+        )
+
+    monkeypatch.setattr(AiAgentClient, "classify_genre", mock_classify_genre)
+
+    target_isbn = "9788950958749"
+
+    # 1. 첫 번째 회원 등록: LLM 장르(PHILOSOPHY)로 캐시 생성
+    resp_1 = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "그림의 힘",
+            "author": "김선현",
+            "isbn": target_isbn,
+            "description": "명화 심리치료",
+        },
+    )
+    assert resp_1.status_code == 201
+    assert resp_1.json()["genre"] == "PHILOSOPHY"
+    assert resp_1.json()["genreSource"] == "LLM"
+    assert ai_call_count == 1
+
+    # 2. 두 번째 회원 등록: 요청에 이미 KDC 장르(TECHNOLOGY)가 들어있는 상황 모사
+    other_member_id = uuid.uuid4()
+    from app.core.security import get_current_member_id
+    from app.main import app
+
+    app.dependency_overrides[get_current_member_id] = lambda: other_member_id
+    try:
+        resp_2 = await client.post(
+            "/api/v1/library/books",
+            json={
+                "title": "그림의 힘 (회원2)",
+                "author": "김선현",
+                "isbn": target_isbn,
+                "genre": "TECHNOLOGY",
+                "subject": "의학/건강",
+                "genre_source": "KDC",
+            },
+        )
+        assert resp_2.status_code == 201
+        data_2 = resp_2.json()
+        # 핵심 검증: KDC 요청 장르가 아닌 캐시된 LLM 장르로 승격되며 출처/신뢰도 일관성 유지
+        assert data_2["genre"] == "PHILOSOPHY"
+        assert data_2["subject"] == "미술치료/심리"
+        assert data_2["genreSource"] == "LLM"
+        assert data_2["genreConfidence"] == 0.96
+        # AI 호출수 그대로 1 (캐시 적재 재사용)
+        assert ai_call_count == 1
+    finally:
+        app.dependency_overrides.pop(get_current_member_id, None)
+
+
+@pytest.mark.asyncio
+async def test_yes24_lookup_by_isbn_mismatched_isbn_not_returned_and_not_cached(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """YES24 단건 조회 시 일치하는 ISBN이 없으면 첫 번째 항목을 채택하지 않고 None 반환 및 미캐싱 검증"""
+    client = Yes24Client(api_key="mock-key")
+
+    async def mock_get(self, url, **kwargs):
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "data": {
+                    "items": [
+                        {
+                            "title": "전혀 무관한 도서",
+                            "author": "엉뚱한 작가",
+                            "isbn13": "9788901234564",  # 요청 ISBN과 전혀 다름
+                            "goodsNo": "99999",
+                        }
+                    ]
+                },
+            },
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", mock_get)
+
+    requested_isbn = "9788950958749"
+    item = await client.lookup_by_isbn(requested_isbn)
+    # 일치하지 않으므로 None 반환
+    assert item is None
+    # 캐시에도 저장되지 않아야 함
+    assert f"isbn:{requested_isbn}" not in client._cache
+
+
+@pytest.mark.asyncio
+async def test_search_by_isbn_provider_failures(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """병렬 서지 검색에서 YES24 실패/국립도서관 실패/양쪽 실패 상황별 격리 검증"""
+    target_isbn = "9788950958749"
+
+    # 케이스 1: YES24 실패(None) + 국립도서관 성공
+    async def mock_yes24_fail(self, isbn: str):
+        return None
+
+    async def mock_nl_success(self, isbn: str):
+        return ExternalBook(
+            title="국립도서관 단독 도서",
+            author="도서관 저자",
+            isbn=isbn,
+            genre=GenreType.LITERATURE,
+            kdc="813.6",
+            subject="한국소설",
+            publisher="도서관 출판사",
+        )
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_fail)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_success)
+
+    resp_1 = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp_1.status_code == 200
+    book_1 = resp_1.json()["book"]
+    assert book_1 is not None
+    assert book_1["title"] == "국립도서관 단독 도서"
+    assert book_1["genre"] == "LITERATURE"
+    assert book_1["link"] is None
+
+    # 케이스 2: 국립도서관 실패(None) + YES24 성공
+    async def mock_yes24_success(self, isbn: str):
+        from app.schemas.search import BookSearchItem
+
+        return BookSearchItem(
+            title="마션 (SF 소설)",
+            author="앤디 위어",
+            isbn=isbn,
+            publisher="RHK",
+            total_pages=530,
+            description="화성 조난 SF 생존기",
+            link="https://www.yes24.com/Product/Goods/777",
+        )
+
+    async def mock_nl_fail(self, isbn: str):
+        return None
+
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_success)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_fail)
+
+    resp_2 = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp_2.status_code == 200
+    book_2 = resp_2.json()["book"]
+    assert book_2 is not None
+    assert book_2["title"] == "마션 (SF 소설)"
+    # SF 키워드로 LITERATURE 추론
+    assert book_2["genre"] == "LITERATURE"
+    assert book_2["subject"] == "SF/과학소설"
+    assert book_2["link"] == "https://www.yes24.com/Product/Goods/777"
+
+    # 케이스 3: 양쪽 모두 실패(None)
+    monkeypatch.setattr(Yes24Client, "lookup_by_isbn", mock_yes24_fail)
+    monkeypatch.setattr(NationalLibraryClient, "lookup_by_isbn", mock_nl_fail)
+
+    resp_3 = await client.get(f"/api/v1/books/search?isbn={target_isbn}")
+    assert resp_3.status_code == 200
+    assert resp_3.json()["total"] == 0
+    assert resp_3.json()["book"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_book_ai_timeout_kdc_fallback_consistency(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    """AI Agent 타임아웃 발생 시 KDC_FALLBACK 출처가 등록 및 조회까지 일관되게 유지되는지 검증"""
+
+    async def mock_classify_timeout(
+        self, title, author="", description=None, kdc=None, isbn=None
+    ):
+        return ClassifyGenreResult(
+            genre=GenreType.LITERATURE,
+            subject="한국문학",
+            confidence=None,
+            source="KDC_FALLBACK",
+            reason="AI Agent request timed out",
+        )
+
+    monkeypatch.setattr(AiAgentClient, "classify_genre", mock_classify_timeout)
+
+    payload = {
+        "title": "타임아웃 폴백 도서",
+        "author": "작가",
+        "isbn": "9788937462566",
+        "kdc": "810",
+    }
+    create_resp = await client.post("/api/v1/library/books", json=payload)
+    assert create_resp.status_code == 201
+    created_book = create_resp.json()
+    assert created_book["genreSource"] == "KDC_FALLBACK"
+    assert created_book["genreConfidence"] is None
+    book_id = created_book["bookId"]
+
+    # 단건 상세 조회에서도 KDC_FALLBACK 유지 확인
+    detail_resp = await client.get(f"/api/v1/library/books/{book_id}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["genreSource"] == "KDC_FALLBACK"
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_book_invalid_genre_source_rejected(
+    client: AsyncClient,
+):
+    """유효하지 않은 genre_source 인입 시 400 Bad Request 에러로 차단 검증"""
+    # 1. 등록 시 잘못된 genre_source
+    resp_create = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "비정상 출처 도서",
+            "author": "저자",
+            "genre_source": "HACKER_SOURCE",
+        },
+    )
+    assert resp_create.status_code == 400
+    assert resp_create.json()["code"] == "INVALID_BOOK_DATA"
+
+    # 2. 정상 등록 후 수정 시 잘못된 genre_source
+    valid_create = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "정상 도서",
+            "author": "저자",
+            "genre_source": "USER",
+        },
+    )
+    assert valid_create.status_code == 201
+    book_id = valid_create.json()["bookId"]
+
+    resp_update = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={
+            "title": "정상 도서",
+            "author": "저자",
+            "reading_status": "READING",
+            "genre_source": "UNKNOWN_SOURCE",
+        },
+    )
+    assert resp_update.status_code == 400
+    assert resp_update.json()["code"] == "INVALID_BOOK_DATA"
