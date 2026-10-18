@@ -56,6 +56,8 @@
 - [x] **Phase 53 (YES24 키워드 검색 기반 도서 탐색 & 서재 등록 파이프라인 구축)**: YES24 Open API(`detail=Y`) 연동으로 표지/쪽수/소개글 원스톱 확보 및 In-memory Dedup·ISBN 결측 필터링·15분 TTL 캐시 구축, 오타 자동교정 대응 query 에코 및 회원 서재 기등록 여부(`isRegistered`) 실시간 매핑, `core.library_book` 스키마에 `description` 및 `genre_source` 선반영(Alembic `010_add_description_and_genre_source`) 완료 (총 132개 테스트 100% Pass, ruff/mypy 무결점)
 - [x] **Phase 54 (하네스 문서 슬림화, 롤링 아카이빙 및 Python 자동 검증 체계 구축)**: `HANDOFF.md` 과거 9월 세션(639줄) 아카이빙 분리(`.harness/archive/HANDOFF_2026-09.md`), 본문 98줄 4세션 슬림화, 토큰 보호 설정(`.agyignore`, `.claude/settings.json`), 5대 공통 규칙 기계적 검증기(`scripts/check_harness.py`), `AGENTS.md` 지침 동기화 완료
 - [x] **Phase 55 (회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호)**: IP당 Rate Limit(signup 분당 5회, resend 3회, confirm 10회), EmailVerification 기준 24시간 이메일당 5회 발송 상한 및 전체 400통 모니터링 경고 로그(Dry-run), /signup/resend with_for_update() 행 잠금 및 선 커밋 후 비동기 SMTP 발송, /signup 동시 가입 시 IntegrityError db.rollback() 및 409 EmailAlreadyExistsException 안전 반환, confirm 5회 오답 시 코드 즉시 만료(expires_at 과거 갱신) 및 Alembic 011_add_failed_attempts_to_email_verifications 적용, 운영 환경 SMTP 설정 앱 기동 시 fail-fast 구현 완료 (총 137개 테스트 100% Pass, ruff/mypy 무결점)
+- [x] **Phase 56 (도서 ISBN-10/13 표준 검증 및 EAN-13 변환 유틸리티 적용)**: Modulo-11 ISBN-10 검증, 1·3 교대 가중치 기반 EAN-13 체크디지트 재계산 및 13자리 변환기(`app/core/isbn.py`), DTO `@field_validator("isbn")`를 통한 하이픈/공백 제거·10자리 자동 승격·빈문자열 None(DB NULL) 처리·유효하지 않은 ISBN 422 거부, 검색 API 13자리 정규화 및 ISBN-10/13 중복 등록 차단 구현 완료 (총 151개 단위 테스트 100% Pass, ruff/mypy 무결점)
+
 
 
 

@@ -1,5 +1,34 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-18: 도서 ISBN-10/13 표준 검증 및 EAN-13 변환 유틸리티 적용 (Phase 56)
+- **배경**:
+  - 도서 등록/수정 및 검색 시 하이픈/공백 혼용, 10자리(ISBN-10)와 13자리(ISBN-13) 혼용, 결측치/빈 문자열 혼용으로 인해 동일 도서 중복 등록 및 검색 실패 위험 존재.
+  - Modulo-11 ISBN-10 검증, EAN-13 가중치 체크디지트 재계산 변환 및 13자리 표준화를 도입하여 서지 데이터 무결성 확보.
+- **수행 내용**:
+  1. **공통 ISBN 유틸리티 구축 (`app/core/isbn.py`, `app/core/__init__.py`)**:
+     - `validate_isbn10`: 10자리 길이, 체크디지트 'X'/'x' 대소문자 허용 및 Modulo-11 가중치 합 검증.
+     - `calculate_isbn13_check_digit`: 12자리 숫자에 1, 3 교대 가중치 적용하여 13번째 체크디지트 산출.
+     - `convert_isbn10_to_isbn13`: 유효한 ISBN-10 확인 후 `978` + 앞 9자리 + 신규 체크디지트 결합.
+     - `validate_isbn13`: 13자리 길이 및 EAN-13 체크디지트 유효성 검증.
+     - `normalize_isbn`: 하이픈/공백 제거 및 10자리 유효 시 13자리 자동 변환 승격, 빈 문자열 `None` 처리.
+     - `normalize_and_validate_isbn`: VALID_13, CONVERTED_10, INVALID, MISSING 4대 상태 엄격 판정.
+  2. **요청 DTO 유효성 검사 적용 (`app/schemas/library_book.py`)**:
+     - `CreateLibraryBookRequest`, `UpdateLibraryBookRequest`에 `@field_validator("isbn", mode="before")` 적용.
+     - 공백/하이픈 제거, 10자리 ➔ 13자리 자동 변환, 빈 문자열/공백은 `None` 처리, 유효하지 않은 ISBN은 422 에러 거부.
+  3. **검색 API ISBN 정규화 (`app/routers/search.py`)**:
+     - 검색어 파싱 시 마지막 자리 'X'/'x' 지원 및 10자리 입력 시 13자리로 정규화하여 YES24/도서관 검색 연동.
+  4. **도서 서비스 영속화 안전성 보장 (`app/services/book_service.py`)**:
+     - 도서 등록/수정 시 공백 문자열 DB `NULL` 저장 보장 및 ISBN-10/13 중복 등록 차단.
+  5. **테스트 및 품질 검증 통과**:
+     - `tests/test_isbn.py` 14종 신규 단위/통합 테스트 작성 (383줄).
+     - 기존 테스트 더미 ISBN 픽스처 표준 유효 번호로 정비.
+     - 전체 151개 단위 테스트 100% 통과 (18.20s), Ruff 및 Mypy 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 56 PR 생성 및 develop 머지 지원**:
+     - PR 생성 및 CI 통과 후 develop 머지 지원.
+  2. **Phase 54: YES24 단건 조회 + AI Agent 장르 분류 연동**:
+     - Alembic 012 `genre_confidence` 추가 및 `POST /api/v1/classify-genre` 연동.
+
 ## 2026-10-16: 회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호 (Phase 55)
 - **배경**:
   - `/signup/resend`의 30초 쿨다운만으로는 이메일 변경 가입을 통한 타인 메일 폭탄(Mail Bombing)과 Gmail 일일 500통 쿼터 고갈을 막을 수 없음.
@@ -31,7 +60,6 @@
      - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
 
 ## 2026-10-08: 하네스 문서 슬림화, 롤링 아카이빙 및 Python 자동 검증 체계 구축 (Phase 54)
-
 - **배경**:
   - `HANDOFF.md`가 739줄로 비대화되어 AI 컨텍스트 토큰 낭비 및 관리 부담이 증가함.
   - `backend-ai-agent#59` 및 `frontend-reader-web#121`에서 검증 완료된 DPYB 표준 하네스 규격을 본 레포(`backend-core-api`)에 이식하여 문서 슬림화 및 기계적 검증 자동화 완결.
@@ -109,26 +137,3 @@
      - `.github/workflows/cleanup-demo.yml` 실행 주기를 다회(예: 3~4시간 간격)로 단축 및 `target=all` 리셋 연동.
   3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
      - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.
-
-## 2026-10-06: 공식 데모 계정(DEMO_MEMBER_ID) 도서 및 스크랩 삭제 권한 개방 (Phase 51)
-- **배경**:
-  - `dpyb@gmail.com` 공식 데모 계정에서 도서 삭제 및 스크랩 삭제 테스트를 직접 수행할 수 있도록 삭제 권한 개방 요청.
-  - 비밀번호 변경, 탈퇴, 프로필 수정 등 치명적 파괴 행위는 방어를 유지하면서, 도서/스크랩 삭제 작업만 Allowlist에 안전하게 추가.
-- **수행 내용**:
-  1. **미들웨어 Allowlist 수정 (`app/main.py`)**:
-     - `demo_allowed_write_routes`에 `("DELETE", "/api/v1/library/books/{book_id}")` 및 `("DELETE", "/api/v1/library/scraps/{scrap_id}")` 추가.
-  2. **가드 테스트 갱신 (`tests/test_demo_account_guard.py`)**:
-     - 데모 계정에서 도서 삭제(204 No Content) 및 스크랩 삭제(204 No Content) 성공 검증 반영.
-     - 비밀번호 변경, 회원 탈퇴, 프로필 수정, 임의 책장 생성 등 계정 파괴/탈취 행위의 403 차단 유지 검증.
-  3. **3-Tier 검증 통과**:
-     - Ruff format & check 100% 무결점.
-     - Mypy 정적 타입 체크 100% 무결점.
-     - 단위 테스트 124개 전수 통과 (15.93s).
-- **다음 세션에서 이어 진행할 작업**:
-  1. **게스트 스타터 가이드북(1권) 메타데이터 등록**:
-     - 스타터 가이드북 메타데이터 수신 시 `app/services/demo_seed_data.py`의 `GUEST_SEED_BOOKS`에 1권 전용 시드로 등록.
-  2. **청소부 크론 주기 단축 및 게스트 리셋 반영**:
-     - `.github/workflows/cleanup-demo.yml` 실행 주기를 다회(예: 3~4시간 간격)로 단축 및 `target=all` 리셋 연동.
-  3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
-     - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.
-
