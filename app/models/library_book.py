@@ -6,6 +6,7 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -73,6 +74,7 @@ class LibraryBook(Base):
     genre_source: Mapped[str] = mapped_column(
         String(20), default="KDC", server_default="KDC", nullable=False
     )
+    genre_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
     reading_status: Mapped[BookReadingStatus] = mapped_column(
         SAEnum(
             BookReadingStatus,
