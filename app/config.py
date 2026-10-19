@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     YES24_API_KEY: str | None = None
     AI_AGENT_BASE_URL: str | None = None
 
+    # Cloudflare R2 Storage (S3-compatible)
+    R2_ACCOUNT_ID: str | None = None
+    R2_ACCESS_KEY_ID: str | None = None
+    R2_SECRET_ACCESS_KEY: str | None = None
+    R2_BUCKET_NAME: str = "dpyb-public"
+    R2_PUBLIC_URL_PREFIX: str = "https://cdn.ai0208.xyz"
+    R2_ENV_PREFIX: str = "beta"
+
     # Email / SMTP (Gmail)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587

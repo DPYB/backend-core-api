@@ -544,7 +544,20 @@ class MemberService:
                 )
             member.nickname = new_nickname
 
+        old_image_to_delete: str | None = None
         if req.profile_image_url is not None:
+            from app.services.storage_service import StorageService
+
+            # 1. R2 스토리지 무결성 및 소유권 검증 (R2 CDN URL인 경우 실제 객체 및 매직넘버 검증)
+            StorageService.verify_uploaded_profile_image(
+                member_id, req.profile_image_url
+            )
+
+            # 변경 예정인 이전 커스텀 이미지 추적
+            old_image_url = member.profile_image_url
+            if old_image_url and old_image_url != req.profile_image_url:
+                old_image_to_delete = old_image_url
+
             member.profile_image_url = req.profile_image_url
         if req.birth_date is not None:
             member.birth_date = req.birth_date
@@ -553,6 +566,15 @@ class MemberService:
 
         await db.commit()
         await db.refresh(member)
+
+        # 2. DB 트랜잭션 성공 완료 후 이전 커스텀 이미지 정리 (실패해도 프로필 갱신은 안전 보존)
+        if old_image_to_delete:
+            from app.services.storage_service import StorageService
+
+            StorageService.delete_image_if_exists(
+                old_image_to_delete, member_id=member_id
+            )
+
         return await MemberService.get_profile(db, member_id)
 
     @staticmethod
