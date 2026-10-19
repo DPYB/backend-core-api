@@ -65,3 +65,36 @@
      - `.github/workflows/cleanup-demo.yml` 실행 주기를 다회(예: 3~4시간 간격)로 단축 및 `target=all` 리셋 연동.
   3. **프론트엔드 안내 배너 배포 후 게스트 쓰기 활성화**:
      - 프론트엔드 공용 서재 상단 띠배너 배포 확인 후 Cloud Run 환경변수 `ENABLE_GUEST_WRITE=True` 적용.
+
+
+## 2026-10-07: YES24 키워드 검색 기반 도서 탐색 및 원스톱 서재 등록 파이프라인 구축 (Phase 53)
+- **배경**:
+  - 기존의 ISBN 직접 입력/스캔 방식에 더해, 제목/저자 키워드 검색으로 여러 권의 후보 도서(표지, 제목, 저자, 출판사, 쪽수, 소개글)를 조회하고 사용자가 원하는 책을 콕 집어 원스톱 등록할 수 있는 직관적 UX 구축.
+  - 향후 3단계 데이터 진화(국립도서관 KDC 힌트 ➔ LLM 감성 번역 ➔ StoryGraph식 유저 집단지성 피드백 루프)의 엔진이 될 도서 줄거리 소개글(`description`)과 장르 출처(`genre_source`) 메타데이터를 선제 확보.
+- **수행 내용**:
+  1. **실측 기반 API 파라미터 및 노이즈 필터링 검증 (Phase 1)**:
+     - `YES_24_API_KEY` 인증 통과 (200 OK) 및 Rate Limit(초당 10회, 일일 20,000회) 실측.
+     - `detail=Y` 파라미터 적용 시 `pages: 268`(정수 쪽수), `cover`(앞표지), `sideCover`(책등), `contentDetail.bookIntroduction`(소개글)이 1회 호출로 원스톱 확보됨을 확인 (등록 시 재호출 0회 최적화).
+     - 묶음 세트 상품의 `isbn13` 빈 문자열(결측) 자동 제외 필터링 및 동일 ISBN In-memory Dedup 규칙 수립.
+     - 오타 자동 교정 시 원본 `query` 에코 및 프론트 안내 라벨 UX 확립.
+  2. **DB 스키마 선반영 및 ORM/DTO 동기화 (Phase 2)**:
+     - Alembic 마이그레이션 `010_add_description_and_genre_source.py`: `core.library_book` 테이블에 `description TEXT NULL`, `genre_source VARCHAR(20) NOT NULL DEFAULT 'KDC'` 추가.
+     - `LibraryBook` ORM 모델에 두 컬럼 매핑.
+     - Pydantic DTO(`CreateLibraryBookRequest`, `CreateLibraryBookResponse`, `LibraryBookItemResponse`, `LibraryBookDetailResponse`, `UpdateLibraryBookRequest`, `UpdateLibraryBookResponse`, `ExternalBook`, `SearchLibraryBookDetail`, `BookSearchItem`, `BookSearchResponse`) 전수 동기화.
+  3. **백엔드 클라이언트 및 검색/등록 파이프라인 구현 (Phase 3)**:
+     - `Yes24Client` (`app/services/yes24.py`): 10초 타임아웃, Graceful Fallback, 15분 인메모리 TTL 캐시.
+     - `ALLOWED_COVER_HOSTS`에 `image.yes24.com`, `yes24.com` 추가하여 표지 URL 검증 통과 보장.
+     - `GET /api/v1/books/search`: `query` 수신 시 YES24 검색 수행, 회원 서재 기등록 여부(`isRegistered`) 실시간 일괄 매핑, 원본 `query` 에코 (`BookSearchResponse`).
+     - `BookService.create_book` 및 `update_book`: `description` 및 `genre_source` 영속화 및 반환.
+  4. **3-Tier 품질 검증 (Phase 4)**:
+     - `tests/test_search.py` (키워드 검색 성공, query 에코, is_registered 매핑, Dedup/필터링/캐시 단위 검증 3건).
+     - `tests/test_books.py` (`description`, `genre_source` 등록 및 수정 영속화 검증 1건).
+     - Ruff 포맷/린트 100% 무결점 (112개 파일).
+     - Mypy 정적 타입 체크 100% 무결점 (102개 소스 파일).
+  5. **PR 머지 및 배포 완료**:
+     - PR [#40](https://github.com/DPYB/backend-core-api/pull/40) 생성 및 CI/Lint 전수 통과 확인 후 `develop` 브랜치에 정상 머지 완료 (`aa58741`).
+- **다음 세션에서 이어 진행할 작업**:
+  1. **프론트엔드 검색 UI 연동** (`frontend-reader-web#118` 연동 참조):
+     - 검색창(`GET /api/v1/books/search?query=...`) 연동 및 도서 선택 시 `POST /api/v1/library/books` 등록 확인.
+  2. **Google Cloud Run 배포 마이그레이션**:
+     - `YES_24_API_KEY` 환경변수 주입 및 컨테이너 기동 마이그레이션 검증.

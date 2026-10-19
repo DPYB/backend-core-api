@@ -87,6 +87,11 @@ class TermsNotAgreedException(AppException):
         super().__init__(status.HTTP_400_BAD_REQUEST, "TERMS_NOT_AGREED", message)
 
 
+class InvalidImageUploadException(AppException):
+    def __init__(self, message: str = "이미지 업로드 요청이 올바르지 않습니다."):
+        super().__init__(status.HTTP_400_BAD_REQUEST, "INVALID_IMAGE_UPLOAD", message)
+
+
 # --- 401 Unauthorized ---
 class UnauthorizedException(AppException):
     def __init__(self, message: str = "인증에 실패했습니다."):
@@ -140,6 +145,16 @@ class DemoQuotaExceededException(AppException):
         super().__init__(status.HTTP_403_FORBIDDEN, "DEMO_QUOTA_EXCEEDED", message)
 
 
+class ImageStorageAccessDeniedException(AppException):
+    def __init__(
+        self,
+        message: str = "해당 이미지에 대한 접근 또는 등록 권한이 없습니다.",
+    ):
+        super().__init__(
+            status.HTTP_403_FORBIDDEN, "IMAGE_STORAGE_ACCESS_DENIED", message
+        )
+
+
 # --- 429 Too Many Requests ---
 class RateLimitExceededException(AppException):
     def __init__(
@@ -177,6 +192,11 @@ class RepresentativeLibrarianNotSelectedException(AppException):
         super().__init__(
             status.HTTP_404_NOT_FOUND, "REPRESENTATIVE_LIBRARIAN_NOT_SELECTED", message
         )
+
+
+class ImageNotFoundException(AppException):
+    def __init__(self, message: str = "스토리지에 업로드된 이미지를 찾을 수 없습니다."):
+        super().__init__(status.HTTP_404_NOT_FOUND, "IMAGE_NOT_FOUND", message)
 
 
 # --- 409 Conflict ---

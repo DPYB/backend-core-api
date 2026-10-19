@@ -1,5 +1,32 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-19: Cloudflare R2 Presigned URL 다이렉트 업로드 파이프라인 구축 & 프로필 사진 연동 (Phase 58)
+- **배경**:
+  - 사용자 프로필 사진 업로드 시 백엔드 서버 부하(대역폭 및 CPU/RAM)를 $0로 차단하기 위해 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
+  - 가짜/타인 객체 키 등록, 미업로드 객체 등록, 용량 초과 등 스토리지 무결성 침해를 원천 방어하고 이전 커스텀 이미지 자동 정리(Clean-up) 구현.
+- **수행 내용**:
+  1. **의존성 및 환경설정 구축 (`pyproject.toml`, `app/config.py`, `.env.example`)**:
+     - `boto3>=1.34.0` 의존성 추가.
+     - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`("dpyb-public"), `R2_PUBLIC_URL_PREFIX`("https://cdn.ai0208.xyz"), `R2_ENV_PREFIX`("beta") 환경변수 구성.
+  2. **범용 스토리지 서비스 구현 (`app/services/storage_service.py`)**:
+     - `StorageService`: boto3 S3 클라이언트 팩토리, 4대 MIME 타입(WebP, PNG, JPEG, GIF) 매핑 및 5MB 상한 검증.
+     - 고유 객체 키 생성 규칙: `{category}/{env}/{member_id}_{timestamp}_{uuid8}.{ext}`.
+     - 600초 유효기간 Presigned PUT URL 생성 및 로그 시 서명 쿼리스트링 마스킹.
+     - `verify_uploaded_profile_image`: R2 CDN URL에 대해 본인 키 소유권 및 실제 객체 존재 여부(`head_object`), 용량/타입 검증.
+     - `delete_image_if_exists`: 프로필 변경 시 이전 커스텀 이미지 삭제 연동.
+  3. **DTO 및 엔드포인트 신설 (`app/schemas/member.py`, `app/routers/users.py`, `app/services/member_service.py`)**:
+     - `ProfileImagePresignedUrlRequest`, `ProfileImagePresignedUrlResponse` Pydantic DTO 추가.
+     - `POST /api/v1/users/me/profile-image/presigned-url` 및 별칭 엔드포인트 신설 (게스트/데모 계정 차단).
+     - `PATCH /api/v1/users/me`: `MemberService.update_profile` 내 무결성 검증 및 이전 이미지 정리 통합.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_storage.py` 신설: Mock S3 기반 단위 테스트, 키/MIME 매핑, 인증/인가/용량초과/미존재 가드, E2E 갱신 20종 전수 통과.
+     - 전체 198개 단위 테스트 100% 그린 (18.71s), Ruff 포맷/린트 및 Mypy 타입 체크 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 58 PR 생성 및 develop 머지 지원**:
+     - 로컬 커밋 상태 점검 후 PR 생성 및 CI 통과 확인.
+  2. **향후 문장 수집 스크랩(Scrap) 원본 이미지 연동**:
+     - `StorageService`의 `category="scrap"`을 활용한 스크랩 Presigned URL 엔드포인트 확장.
+
 ## 2026-10-18: YES24 단건 조회 + AI Agent 장르 분류 연동 및 캐시 재사용 파이프라인 구축 (Phase 57)
 - **배경**:
   - AI 에이전트 서비스(`backend-ai-agent#68`)의 Gemini Flash-Lite 기반 `POST /api/v1/classify-genre` API 구축 완료에 맞춰, 본 레포(`backend-core-api`)의 도서 등록 및 서지 융합 파이프라인 연동.
@@ -113,35 +140,3 @@
      - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
   2. **데모 계정 자동 청소 크론 최적화**:
      - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
-
-## 2026-10-07: YES24 키워드 검색 기반 도서 탐색 및 원스톱 서재 등록 파이프라인 구축 (Phase 53)
-- **배경**:
-  - 기존의 ISBN 직접 입력/스캔 방식에 더해, 제목/저자 키워드 검색으로 여러 권의 후보 도서(표지, 제목, 저자, 출판사, 쪽수, 소개글)를 조회하고 사용자가 원하는 책을 콕 집어 원스톱 등록할 수 있는 직관적 UX 구축.
-  - 향후 3단계 데이터 진화(국립도서관 KDC 힌트 ➔ LLM 감성 번역 ➔ StoryGraph식 유저 집단지성 피드백 루프)의 엔진이 될 도서 줄거리 소개글(`description`)과 장르 출처(`genre_source`) 메타데이터를 선제 확보.
-- **수행 내용**:
-  1. **실측 기반 API 파라미터 및 노이즈 필터링 검증 (Phase 1)**:
-     - `YES_24_API_KEY` 인증 통과 (200 OK) 및 Rate Limit(초당 10회, 일일 20,000회) 실측.
-     - `detail=Y` 파라미터 적용 시 `pages: 268`(정수 쪽수), `cover`(앞표지), `sideCover`(책등), `contentDetail.bookIntroduction`(소개글)이 1회 호출로 원스톱 확보됨을 확인 (등록 시 재호출 0회 최적화).
-     - 묶음 세트 상품의 `isbn13` 빈 문자열(결측) 자동 제외 필터링 및 동일 ISBN In-memory Dedup 규칙 수립.
-     - 오타 자동 교정 시 원본 `query` 에코 및 프론트 안내 라벨 UX 확립.
-  2. **DB 스키마 선반영 및 ORM/DTO 동기화 (Phase 2)**:
-     - Alembic 마이그레이션 `010_add_description_and_genre_source.py`: `core.library_book` 테이블에 `description TEXT NULL`, `genre_source VARCHAR(20) NOT NULL DEFAULT 'KDC'` 추가.
-     - `LibraryBook` ORM 모델에 두 컬럼 매핑.
-     - Pydantic DTO(`CreateLibraryBookRequest`, `CreateLibraryBookResponse`, `LibraryBookItemResponse`, `LibraryBookDetailResponse`, `UpdateLibraryBookRequest`, `UpdateLibraryBookResponse`, `ExternalBook`, `SearchLibraryBookDetail`, `BookSearchItem`, `BookSearchResponse`) 전수 동기화.
-  3. **백엔드 클라이언트 및 검색/등록 파이프라인 구현 (Phase 3)**:
-     - `Yes24Client` (`app/services/yes24.py`): 10초 타임아웃, Graceful Fallback, 15분 인메모리 TTL 캐시.
-     - `ALLOWED_COVER_HOSTS`에 `image.yes24.com`, `yes24.com` 추가하여 표지 URL 검증 통과 보장.
-     - `GET /api/v1/books/search`: `query` 수신 시 YES24 검색 수행, 회원 서재 기등록 여부(`isRegistered`) 실시간 일괄 매핑, 원본 `query` 에코 (`BookSearchResponse`).
-     - `BookService.create_book` 및 `update_book`: `description` 및 `genre_source` 영속화 및 반환.
-  4. **3-Tier 품질 검증 (Phase 4)**:
-     - `tests/test_search.py` (키워드 검색 성공, query 에코, is_registered 매핑, Dedup/필터링/캐시 단위 검증 3건).
-     - `tests/test_books.py` (`description`, `genre_source` 등록 및 수정 영속화 검증 1건).
-     - Ruff 포맷/린트 100% 무결점 (112개 파일).
-     - Mypy 정적 타입 체크 100% 무결점 (102개 소스 파일).
-  5. **PR 머지 및 배포 완료**:
-     - PR [#40](https://github.com/DPYB/backend-core-api/pull/40) 생성 및 CI/Lint 전수 통과 확인 후 `develop` 브랜치에 정상 머지 완료 (`aa58741`).
-- **다음 세션에서 이어 진행할 작업**:
-  1. **프론트엔드 검색 UI 연동** (`frontend-reader-web#118` 연동 참조):
-     - 검색창(`GET /api/v1/books/search?query=...`) 연동 및 도서 선택 시 `POST /api/v1/library/books` 등록 확인.
-   2. **Google Cloud Run 배포 마이그레이션**:
-      - `YES_24_API_KEY` 환경변수 주입 및 컨테이너 기동 마이그레이션 검증.
