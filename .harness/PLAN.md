@@ -4,6 +4,7 @@
 
 
 
+
 ## [Infra] Google Cloud Run 배포 마이그레이션 & 운영 안정화
 
 - [ ] Task 1: Google Cloud Run 배포 마이그레이션 가이드 및 워크플로우 구성

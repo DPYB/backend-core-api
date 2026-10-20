@@ -98,3 +98,29 @@
      - 검색창(`GET /api/v1/books/search?query=...`) 연동 및 도서 선택 시 `POST /api/v1/library/books` 등록 확인.
   2. **Google Cloud Run 배포 마이그레이션**:
      - `YES_24_API_KEY` 환경변수 주입 및 컨테이너 기동 마이그레이션 검증.
+
+
+## 2026-10-08: 하네스 문서 슬림화, 롤링 아카이빙 및 Python 자동 검증 체계 구축 (Phase 54)
+- **배경**:
+  - `HANDOFF.md`가 739줄로 비대화되어 AI 컨텍스트 토큰 낭비 및 관리 부담이 증가함.
+  - `backend-ai-agent#59` 및 `frontend-reader-web#121`에서 검증 완료된 DPYB 표준 하네스 규격을 본 레포(`backend-core-api`)에 이식하여 문서 슬림화 및 기계적 검증 자동화 완결.
+- **수행 내용**:
+  1. **사전 백업 및 아카이빙 (.harness/archive/)**:
+     - `.harness/archive/` 생성 및 과거 9월 세션 로그 전체(639줄)를 `.harness/archive/HANDOFF_2026-09.md`로 이동 및 백업.
+     - 본문 `HANDOFF.md`를 최근 4개 세션(98줄)으로 슬림화하고 타 레포 침범 방지 정제 (`frontend-reader-web#115`, `frontend-reader-web#118` 참조 처리).
+  2. **검증 스크립트 구축 (`scripts/check_harness.py`)**:
+     - HANDOFF 라인 수(<=200) 및 세션 수(<=5), STATE 라인 수(<=150), DECISIONS 라인 수(<=150) & 용량(<=20KB), archive 파일명 ISO 표준 규격, 타 레포 격리 5대 규칙 기계적 검증 스크립트 작성 및 실행 권한(`chmod +x`) 부여.
+  3. **토큰 보호 설정**:
+     - `.agyignore` 및 `.claude/settings.json`에 `.harness/archive/` 차단 설정 생성.
+  4. **AGENTS.md 표준 동기화**:
+     - DPYB 5대 파일 및 상한 규격 최신화, 본 레포 백엔드 고유 도메인(RDBMS 영속화 SSOT, LexoRank, KDC 체계, 사서 4종 등) 및 계층형 3-Tier 검증 체계 100% 보존.
+  5. **품질 검증 통과**:
+     - `python3 scripts/check_harness.py` 통과.
+     - `uv run ruff format --check .` 및 `uv run ruff check .` 100% 무결점 통과.
+     - `uv run mypy .` (103개 소스 파일 통과).
+     - `uv run pytest -m "not integration" -x` (132개 테스트 전수 통과, 18.25s).
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Google Cloud Run 배포 마이그레이션**:
+     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
+  2. **데모 계정 자동 청소 크론 최적화**:
+     - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
