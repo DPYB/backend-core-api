@@ -39,6 +39,7 @@ from app.schemas.library_book import (
 from app.services.ai_agent import AiAgentClient
 from app.services.national_library import get_verified_cover_url
 from app.services.shelf_service import ShelfService
+from app.services.storage_service import StorageService
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,10 @@ class BookService:
             status = BookReadingStatus.READING
 
         is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+        clean_cover_url = (req.cover_url or "").strip()
+        if not is_guest and clean_cover_url:
+            StorageService.verify_uploaded_book_cover(clean_cover_url)
+
         verified_cover_url = get_verified_cover_url(
             req.cover_url, clean_isbn, is_guest=is_guest
         )
@@ -557,7 +562,12 @@ class BookService:
         book.subject = req.subject.strip() if req.subject else None
         book.publisher = req.publisher.strip() if req.publisher else None
         book.published_date = req.published_date
+        old_cover_url = book.cover_url
         is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+        new_cover_url = (req.cover_url or "").strip()
+        if not is_guest and new_cover_url and new_cover_url != old_cover_url:
+            StorageService.verify_uploaded_book_cover(new_cover_url)
+
         book.cover_url = get_verified_cover_url(
             req.cover_url, clean_isbn, is_guest=is_guest
         )
@@ -572,6 +582,10 @@ class BookService:
 
         await db.commit()
         await db.refresh(book)
+
+        # DB 커밋 성공 후: 표지가 변경되었고 이전 표지가 R2 커스텀 표지였다면 안전 정리
+        if not is_guest and old_cover_url and old_cover_url != book.cover_url:
+            StorageService.delete_image_if_exists(old_cover_url)
 
         return UpdateLibraryBookResponse(
             book_id=book.id,
@@ -611,6 +625,7 @@ class BookService:
             )
 
         now = datetime.now(UTC)
+        old_cover_url = book.cover_url
         # 1. 도서 소프트 삭제
         book.deleted_at = now
 
@@ -625,6 +640,10 @@ class BookService:
         )
         await db.execute(scrap_stmt)
         await db.commit()
+
+        # 3. 도서 소프트 삭제 완료 후 커스텀 표지 안전 정리
+        if old_cover_url:
+            StorageService.delete_image_if_exists(old_cover_url)
 
     @staticmethod
     async def reorder_book(

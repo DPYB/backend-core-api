@@ -124,3 +124,34 @@
      - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
   2. **데모 계정 자동 청소 크론 최적화**:
      - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
+
+
+## 2026-10-16: 회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호 (Phase 55)
+- **배경**:
+  - `/signup/resend`의 30초 쿨다운만으로는 이메일 변경 가입을 통한 타인 메일 폭탄(Mail Bombing)과 Gmail 일일 500통 쿼터 고갈을 막을 수 없음.
+  - `/signup` 엔드포인트의 Rate Limit 부재, Read-then-Write 동시 요청 레이스 컨디션, `/signup/confirm`의 6자리 난수(90만 개) 브루트포스 대입 취약점, 운영 환경 SMTP 설정 누락 시 Silent Fallback 문제를 원천 차단하기 위해 다계층 보안망 구축.
+- **수행 내용**:
+  1. **IP 추출 안전성 및 Rate Limit 구축 (`app/core/rate_limit.py`)**:
+     - `CF-Connecting-IP` 최우선 신뢰 및 `X-Forwarded-For` 역순 탐색(스푸핑 방어) 안전 IP 파서 구현.
+     - `auth_rate_limiter`: `/signup`(분당 5회), `/signup/resend`(분당 3회), `/signup/confirm`(분당 10회) IP Rate Limit 적용.
+  2. **DB 기반 24시간 쿼터 상한 & DoS 방어 모니터링 (`app/services/email_service.py`)**:
+     - `EmailService.check_email_quota`: 동일 이메일 최근 24시간 5회 초과 시 429 차단, 전체 400통 도달 시 `[QUOTA_ALERT]` 경고 로그(Dry-run) 출력.
+  3. **동시성 안전성 및 락/트랜잭션 분리 (`app/routers/auth.py`, `app/services/member_service.py`)**:
+     - `/signup/resend`: `Member` 행 `with_for_update()` 락 ➔ 쿨다운/쿼터 검증 ➔ 레코드 commit(락 즉시 해제) ➔ 트랜잭션 밖에서 외부 비동기 SMTP 발송 패턴 적용 (Supabase Pooler 점유 최소화).
+     - `/signup`: 동시 가입으로 인한 DB `uq_members_email_active` 충돌 시 `IntegrityError`를 catch하여 반드시 `await db.rollback()` 수행 후 409 `EmailAlreadyExistsException` 안전 반환 (`PendingRollbackError` 원천 방지).
+  4. **브루트포스 차단 및 코드 즉시 파기 (`app/models/member.py`, Alembic `011`)**:
+     - Alembic 마이그레이션 `011_add_failed_attempts_to_email_verifications.py` 생성 및 `EmailVerification.failed_attempts` 매핑.
+     - `/signup/confirm`: `with_for_update()` 락, 불일치 시 `failed_attempts += 1`, 5회 도달 시 `expires_at = now - 1s`로 덮어써서 물리적 만료 처리 (추가 시도 원천 차단, 최대 시도 5코드×5회=25회/90만 통제).
+  5. **앱 기동 시점 SMTP Fail-Fast 검증 (`app/config.py`)**:
+     - `validate_production_settings()`에서 `ENV in ("production", "staging")`일 때 `SMTP_USER`/`SMTP_PASSWORD` 누락 시 `ValueError` 발생시켜 컨테이너 기동 즉시 fail-fast 보장.
+  6. **테스트 및 품질 검증 통과**:
+     - `tests/conftest.py`에 `reset_rate_limiters` autouse 픽스처 추가하여 테스트 간 격리 보장.
+     - `tests/test_signup.py`에 IP 제한, 이메일별 쿼터, confirm 5회 오답 차단 및 6회차 정답 차단, IntegrityError 롤백 409, SMTP fail-fast 검증 테스트 추가 (10개 테스트 전수 통과).
+     - 전체 137개 단위 테스트 100% 통과 (18.36s), ruff 및 mypy 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
+     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
+  2. **프론트엔드 Turnstile(봇 방지 CAPTCHA) 연동**:
+     - 가입 폼 Turnstile 검증 서버 siteverify 연동 및 400통 상한 Hard 차단 전환.
+  3. **데모 계정 자동 청소 크론 최적화**:
+     - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.

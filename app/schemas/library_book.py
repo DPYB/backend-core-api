@@ -15,6 +15,45 @@ from app.schemas.common import CamelModel, PaginatedResponse
 ALLOWED_GENRE_SOURCES: set[str] = {"KDC", "LLM", "KDC_FALLBACK", "USER"}
 
 
+class BookCoverPresignedUrlRequest(CamelModel):
+    """도서 직접 등록용 커스텀 표지 Presigned URL 발급 요청"""
+
+    content_type: str = Field(
+        default="image/webp",
+        description="업로드할 이미지 Content-Type (image/webp, image/jpeg, image/png, image/gif)",
+    )
+
+
+class BookCoverPresignedUrlData(CamelModel):
+    """도서 표지 Presigned URL 상세 데이터"""
+
+    upload_url: str = Field(
+        ..., description="Cloudflare R2 다이렉트 업로드용 Presigned PUT URL"
+    )
+    public_url: str = Field(..., description="최종 CDN 이미지 접근 URL")
+    key: str = Field(..., description="R2 스토리지 객체 키")
+    expires_in: int = Field(default=600, description="Presigned URL 유효 시간 (초)")
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def presigned_url(self) -> str:
+        """기존 스토리지 DTO 및 클라이언트 호환 필드"""
+        return self.upload_url
+
+    @computed_field  # type: ignore[misc]
+    @property
+    def image_url(self) -> str:
+        """기존 스토리지 DTO 및 클라이언트 호환 필드"""
+        return self.public_url
+
+
+class BookCoverPresignedUrlResponse(CamelModel):
+    """도서 표지 Presigned URL 발급 응답"""
+
+    status: str = Field(default="success", description="응답 상태")
+    data: BookCoverPresignedUrlData = Field(..., description="Presigned URL 데이터")
+
+
 class CreateLibraryBookRequest(CamelModel):
     title: str = Field(..., min_length=1, max_length=200)
     author: str = Field(..., min_length=1, max_length=100)
