@@ -24,6 +24,7 @@ from app.schemas.scrap import (
     UpdateScrapRequest,
     UpdateScrapResponse,
 )
+from app.services.storage_service import StorageService
 
 
 class ScrapService:
@@ -59,11 +60,12 @@ class ScrapService:
                 )
 
         # 게스트 체험 모드인 경우 악성 이미지/DB 용량 팽창 방지를 위해 빈 문자열로 정제
-        final_image_url = (
-            ""
-            if str(member_id) == settings.GUEST_MEMBER_ID
-            else (req.scrap_image_url or "")
-        )
+        is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+        final_image_url = "" if is_guest else (req.scrap_image_url or "")
+
+        # 비게스트 업로드 이미지 무결성 검증 (R2 Presigned 업로드 객체 확인)
+        if not is_guest and final_image_url:
+            StorageService.verify_uploaded_scrap_image(member_id, final_image_url)
 
         scrap = Scrap(
             book_id=book_id,
@@ -198,16 +200,26 @@ class ScrapService:
         if book.member_id != member_id:
             raise ScrapAccessDeniedException("해당 스크랩에 대한 접근 권한이 없습니다.")
 
+        old_image_url = scrap.scrap_image_url
+        is_guest = str(member_id) == settings.GUEST_MEMBER_ID
+
         scrap.sentence = req.sentence
         scrap.page_number = req.page_number
-        if str(member_id) == settings.GUEST_MEMBER_ID:
+        if is_guest:
             scrap.scrap_image_url = ""
         elif req.scrap_image_url is not None:
-            scrap.scrap_image_url = req.scrap_image_url
+            new_image_url = req.scrap_image_url.strip()
+            if new_image_url and new_image_url != old_image_url:
+                StorageService.verify_uploaded_scrap_image(member_id, new_image_url)
+            scrap.scrap_image_url = new_image_url
         scrap.memo = req.memo.strip() if req.memo else None
 
         await db.commit()
         await db.refresh(scrap)
+
+        # DB 커밋 성공 후: 이미지가 변경되었고 이전 이미지가 존재한다면 이전 R2 객체 정리
+        if not is_guest and old_image_url and old_image_url != scrap.scrap_image_url:
+            StorageService.delete_image_if_exists(old_image_url, member_id=member_id)
 
         return UpdateScrapResponse(
             scrap_id=scrap.id,
@@ -238,5 +250,10 @@ class ScrapService:
         if book.member_id != member_id:
             raise ScrapAccessDeniedException("해당 스크랩에 대한 접근 권한이 없습니다.")
 
+        old_image_url = scrap.scrap_image_url
         scrap.deleted_at = datetime.now(UTC)
         await db.commit()
+
+        # DB 커밋 성공 후: 스크랩 이미지 객체 안전 정리
+        if old_image_url:
+            StorageService.delete_image_if_exists(old_image_url, member_id=member_id)
