@@ -934,3 +934,329 @@ async def test_scrap_r2_lifecycle_and_cleanup_e2e(
         Bucket="dpyb-public",
         Key=f"quote/beta/{registered_member.member_id}_1729239999_img2.webp",
     )
+
+
+# ==============================================================================
+# 4. Book Cover Presigned URL 및 이미지 무결성 검증/정리 테스트 (Phase 60)
+# ==============================================================================
+
+
+def test_generate_book_cover_presigned_url(mock_s3_client: MagicMock):
+    """도서 표지 Presigned PUT URL 발급 로직, 키 경로(frontcover/beta/...) 및 반환 명세 검증"""
+    mock_s3_client.generate_presigned_url.return_value = (
+        "https://r2.example.com/cover-put?X-Amz-Signature=secret789"
+    )
+
+    test_member_id = uuid.uuid4()
+    res = StorageService.generate_book_cover_presigned_url(
+        member_id=test_member_id,
+        content_type="image/webp",
+    )
+
+    # 전달주신 스펙 키 검증
+    assert "upload_url" in res
+    assert "public_url" in res
+    assert "key" in res
+    assert "presigned_url" in res
+    assert "image_url" in res
+    assert res["expires_in"] == PRESIGNED_URL_EXPIRES_SECONDS
+
+    assert res["key"].startswith("frontcover/beta/")
+    assert res["key"].endswith(".webp")
+    assert res["public_url"].endswith(res["key"])
+
+    # boto3 호출 파라미터 검증
+    mock_s3_client.generate_presigned_url.assert_called_once()
+    call_args = mock_s3_client.generate_presigned_url.call_args
+    assert call_args.kwargs["ClientMethod"] == "put_object"
+    assert call_args.kwargs["ExpiresIn"] == 600
+    params = call_args.kwargs["Params"]
+    assert params["Bucket"] == "dpyb-public"
+    assert params["ContentType"] == "image/webp"
+    assert params["Key"] == res["key"]
+
+
+def test_verify_uploaded_book_cover_non_r2_pass(mock_s3_client: MagicMock):
+    """외부 서점 표지 URL 및 빈 문자열은 R2 조회 없이 통과 (하위 호환성)"""
+    # 외부 서점 CDN URL
+    StorageService.verify_uploaded_book_cover(
+        "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791191587524.jpg"
+    )
+    # 국립도서관/알라딘 등 외부 URL
+    StorageService.verify_uploaded_book_cover("https://cover.nl.go.kr/cover.jpg")
+    # 빈 문자열 또는 None
+    StorageService.verify_uploaded_book_cover("")
+    StorageService.verify_uploaded_book_cover(None)
+
+    mock_s3_client.head_object.assert_not_called()
+
+
+def test_verify_uploaded_book_cover_invalid_path_denied(mock_s3_client: MagicMock):
+    """frontcover/ 경로가 아닌 잘못된 R2 객체 키(예: profile/...) 등록 시도 시 400 차단"""
+    bad_url = "https://cdn.ai0208.xyz/profile/beta/file.webp"
+
+    with pytest.raises(InvalidImageUploadException) as exc:
+        StorageService.verify_uploaded_book_cover(bad_url)
+    assert "도서 표지 이미지 저장 경로가 올바르지 않습니다" in str(exc.value)
+
+
+def test_verify_uploaded_book_cover_not_found(mock_s3_client: MagicMock):
+    """R2에 실제로 업로드되지 않은 표지 객체 등록 시도 시 404 차단"""
+    target_url = "https://cdn.ai0208.xyz/frontcover/beta/nonexistent.webp"
+
+    error_response = {
+        "Error": {"Code": "404", "Message": "Not Found"},
+        "ResponseMetadata": {"HTTPStatusCode": 404},
+    }
+    mock_s3_client.head_object.side_effect = ClientError(error_response, "head_object")
+
+    with pytest.raises(ImageNotFoundException) as exc:
+        StorageService.verify_uploaded_book_cover(target_url)
+    assert "스토리지에 업로드되지 않은 이미지" in str(exc.value)
+
+
+def test_verify_uploaded_book_cover_size_exceeded_and_cleanup(
+    mock_s3_client: MagicMock,
+):
+    """5MB 초과 도서 표지 등록 시도 시 400 차단 및 R2 불량 객체 자동 삭제 검증"""
+    target_url = "https://cdn.ai0208.xyz/frontcover/beta/huge_cover.webp"
+
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": MAX_IMAGE_SIZE_BYTES + 4096,
+        "ContentType": "image/webp",
+    }
+
+    with pytest.raises(InvalidImageUploadException) as exc:
+        StorageService.verify_uploaded_book_cover(target_url)
+    assert "최대 허용치(5MB)를 초과" in str(exc.value)
+
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="dpyb-public",
+        Key="frontcover/beta/huge_cover.webp",
+    )
+
+
+def test_verify_uploaded_book_cover_fake_bytes_reject_and_cleanup(
+    mock_s3_client: MagicMock,
+):
+    """실제 파일이 이미지가 아닌 위조 텍스트일 때 400 차단 및 R2 자동 삭제 검증"""
+    target_url = "https://cdn.ai0208.xyz/frontcover/beta/fake_cover.webp"
+
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": 1024 * 10,
+        "ContentType": "image/webp",
+    }
+    fake_body = MagicMock()
+    fake_body.read.return_value = b"<!DOCTYPE html><html>fake</html>"
+    mock_s3_client.get_object.return_value = {"Body": fake_body}
+
+    with pytest.raises(InvalidImageUploadException) as exc:
+        StorageService.verify_uploaded_book_cover(target_url)
+    assert "유효한 이미지" in str(exc.value)
+
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="dpyb-public",
+        Key="frontcover/beta/fake_cover.webp",
+    )
+
+
+def test_verify_uploaded_book_cover_success(mock_s3_client: MagicMock):
+    """정상 도서 표지 객체 검증 통과 (헤더 및 매직 바이트 검증 성공)"""
+    target_url = "https://cdn.ai0208.xyz/frontcover/beta/valid_cover.webp"
+
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": 1024 * 400,  # 400KB
+        "ContentType": "image/webp",
+    }
+
+    StorageService.verify_uploaded_book_cover(target_url)
+    mock_s3_client.head_object.assert_called_once()
+    mock_s3_client.get_object.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_book_cover_presigned_url_unauthorized(client: AsyncClient):
+    """비인증 요청 시 401 차단"""
+    resp = await client.post(
+        "/api/v1/library/books/cover/presigned-url",
+        json={"contentType": "image/webp"},
+        headers={"Authorization": ""},
+    )
+    assert resp.status_code == 401
+    assert resp.json()["code"] == "UNAUTHORIZED"
+
+
+@pytest.mark.asyncio
+async def test_book_cover_presigned_url_guest_blocked(client: AsyncClient):
+    """게스트 계정의 도서 표지 Presigned URL 발급 시도 시 403 차단"""
+    guest_token = create_guest_token(guest_id=str(uuid.uuid4()))
+    resp = await client.post(
+        "/api/v1/library/books/cover/presigned-url",
+        json={"contentType": "image/webp"},
+        headers={"Authorization": f"Bearer {guest_token}"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_book_cover_presigned_url_demo_blocked(client: AsyncClient):
+    """데모 계정의 도서 표지 Presigned URL 발급 시도 시 403 차단"""
+    demo_token = create_access_token(
+        member_id=uuid.UUID(settings.DEMO_MEMBER_ID),
+        email="demo@dontpawget.com",
+        nickname="데모냥이",
+    )
+    resp = await client.post(
+        "/api/v1/library/books/cover/presigned-url",
+        json={"contentType": "image/webp"},
+        headers={"Authorization": f"Bearer {demo_token}"},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_book_cover_presigned_url_invalid_content_type(
+    client: AsyncClient,
+    member_auth_headers: dict[str, str],
+):
+    """지원하지 않는 Content-Type 요청 시 400 차단"""
+    resp = await client.post(
+        "/api/v1/library/books/cover/presigned-url",
+        json={"contentType": "application/x-executable"},
+        headers=member_auth_headers,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["code"] == "INVALID_IMAGE_UPLOAD"
+
+
+@pytest.mark.asyncio
+async def test_book_cover_presigned_url_success(
+    client: AsyncClient,
+    member_auth_headers: dict[str, str],
+    mock_s3_client: MagicMock,
+):
+    """정상 회원의 도서 표지 Presigned URL 발급 성공 (200 OK 및 명세 JSON 구조 검증)"""
+    mock_s3_client.generate_presigned_url.return_value = "https://r2.cloudflarestorage.com/dpyb-public/frontcover/beta/custom.webp?sig=789"
+
+    resp = await client.post(
+        "/api/v1/library/books/cover/presigned-url",
+        json={"contentType": "image/webp"},
+        headers=member_auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # 명세 구조: { status: "success", data: { uploadUrl, publicUrl, key } }
+    assert body["status"] == "success"
+    data = body["data"]
+    assert "uploadUrl" in data
+    assert "publicUrl" in data
+    assert "key" in data
+    assert data["key"].startswith("frontcover/beta/")
+    assert data["key"].endswith(".webp")
+    assert data["publicUrl"].endswith(data["key"])
+    assert data["expiresIn"] == 600
+
+    # 듀얼 호환 필드 검증
+    assert data["uploadUrl"] == data["presignedUrl"]
+    assert data["publicUrl"] == data["imageUrl"]
+
+
+@pytest.mark.asyncio
+async def test_create_book_with_nonexistent_cover_denied(
+    client: AsyncClient,
+    member_auth_headers: dict[str, str],
+    mock_s3_client: MagicMock,
+):
+    """R2에 실제 업로드되지 않은 커스텀 표지로 도서 등록 시도 시 404 차단"""
+    fake_cover = "https://cdn.ai0208.xyz/frontcover/beta/ghost_cover.webp"
+
+    error_response = {
+        "Error": {"Code": "404", "Message": "Not Found"},
+        "ResponseMetadata": {"HTTPStatusCode": 404},
+    }
+    mock_s3_client.head_object.side_effect = ClientError(error_response, "head_object")
+
+    resp = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "미존재 표지 도서",
+            "author": "작가",
+            "coverUrl": fake_cover,
+        },
+        headers=member_auth_headers,
+    )
+    assert resp.status_code == 404
+    assert resp.json()["code"] == "IMAGE_NOT_FOUND"
+
+
+@pytest.mark.asyncio
+async def test_book_cover_r2_lifecycle_and_cleanup_e2e(
+    client: AsyncClient,
+    member_auth_headers: dict[str, str],
+    mock_s3_client: MagicMock,
+):
+    """
+    도서 커스텀 표지 E2E 라이프사이클 및 이미지 정리 검증:
+    1. 커스텀 R2 표지로 도서 생성 (head_object 무결성 검증 통과)
+    2. 신규 커스텀 R2 표지로 도서 수정 -> 이전 R2 표지 delete_object 호출 확인
+    3. 도서 삭제 -> 해당 커스텀 R2 표지 delete_object 호출 확인
+    """
+    # 1. 첫 번째 R2 표지로 도서 생성
+    cover1_url = "https://cdn.ai0208.xyz/frontcover/beta/custom_cover1.webp"
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": 1024 * 350,
+        "ContentType": "image/webp",
+    }
+
+    create_resp = await client.post(
+        "/api/v1/library/books",
+        json={
+            "title": "커스텀 표지 도서",
+            "author": "멋진 작가",
+            "coverUrl": cover1_url,
+        },
+        headers=member_auth_headers,
+    )
+    assert create_resp.status_code == 201
+    book_id = create_resp.json()["bookId"]
+    assert create_resp.json()["coverUrl"] == cover1_url
+
+    # 2. 두 번째 R2 표지로 도서 수정
+    cover2_url = "https://cdn.ai0208.xyz/frontcover/beta/custom_cover2.webp"
+    mock_s3_client.head_object.return_value = {
+        "ContentLength": 1024 * 450,
+        "ContentType": "image/webp",
+    }
+
+    update_resp = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={
+            "title": "커스텀 표지 도서 (수정)",
+            "author": "멋진 작가",
+            "coverUrl": cover2_url,
+            "readingStatus": "READING",
+        },
+        headers=member_auth_headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["coverUrl"] == cover2_url
+
+    # 이전 커스텀 표지 cover1_url에 대해 delete_object가 호출되었는지 확인
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="dpyb-public",
+        Key="frontcover/beta/custom_cover1.webp",
+    )
+    mock_s3_client.delete_object.reset_mock()
+
+    # 3. 도서 삭제 -> cover2_url에 대해 delete_object 호출 확인
+    del_resp = await client.delete(
+        f"/api/v1/library/books/{book_id}",
+        headers=member_auth_headers,
+    )
+    assert del_resp.status_code == 204
+
+    mock_s3_client.delete_object.assert_called_once_with(
+        Bucket="dpyb-public",
+        Key="frontcover/beta/custom_cover2.webp",
+    )

@@ -3,9 +3,17 @@ import uuid
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
+from app.core.exceptions import (
+    DemoAccountProtectedException,
+    GuestReadOnlyModeException,
+)
 from app.core.security import get_current_member_id
 from app.db.session import get_db
 from app.schemas.library_book import (
+    BookCoverPresignedUrlData,
+    BookCoverPresignedUrlRequest,
+    BookCoverPresignedUrlResponse,
     CreateLibraryBookRequest,
     CreateLibraryBookResponse,
     LibraryBookDetailResponse,
@@ -20,6 +28,7 @@ from app.schemas.library_book import (
     UpdateProgressResponse,
 )
 from app.services.book_service import BookService
+from app.services.storage_service import StorageService
 
 router = APIRouter(prefix="/api/v1/library/books", tags=["Library Book"])
 
@@ -33,6 +42,39 @@ async def create_book(
     db: AsyncSession = Depends(get_db),
 ):
     return await BookService.create_book(db, member_id, request)
+
+
+@router.post(
+    "/cover/presigned-url",
+    response_model=BookCoverPresignedUrlResponse,
+)
+async def get_book_cover_presigned_url(
+    request: BookCoverPresignedUrlRequest,
+    member_id: uuid.UUID = Depends(get_current_member_id),
+):
+    """
+    도서 직접 등록용 커스텀 표지 Cloudflare R2 Presigned PUT URL 발급
+    - 게스트/데모 계정은 악의적 스토리지 점유 방지를 위해 발급이 차단됩니다 (403 Forbidden).
+    - 반환된 uploadUrl로 클라이언트가 직접 R2 버킷에 PUT 요청하여 바이너리를 업로드합니다.
+    """
+    sub_str = str(member_id)
+    if sub_str == settings.DEMO_MEMBER_ID:
+        raise DemoAccountProtectedException(
+            "데모 계정 보호 정책에 의해 도서 표지 업로드 URL을 발급받을 수 없습니다."
+        )
+    if sub_str == settings.GUEST_MEMBER_ID or sub_str.startswith("guest-"):
+        raise GuestReadOnlyModeException(
+            "체험 모드(게스트)에서는 도서 표지 업로드 URL을 발급받을 수 없습니다."
+        )
+
+    res = StorageService.generate_book_cover_presigned_url(
+        member_id=member_id,
+        content_type=request.content_type,
+    )
+    return BookCoverPresignedUrlResponse(
+        status="success",
+        data=BookCoverPresignedUrlData(**res),
+    )
 
 
 @router.get("", response_model=LibraryBookPageResponse)

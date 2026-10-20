@@ -179,19 +179,70 @@ class StorageService:
         )
 
     @classmethod
-    def _verify_uploaded_image(
+    def generate_book_cover_presigned_url(
         cls,
         member_id: uuid.UUID,
+        content_type: str = "image/webp",
+    ) -> dict[str, Any]:
+        """
+        도서 직접 등록용 커스텀 표지 Presigned PUT URL 및 CDN 접근 URL을 생성합니다.
+        키 경로 규칙: frontcover/{env}/{UUID}.{ext}
+        """
+        clean_content_type = (content_type or "").strip().lower()
+        ext = cls._validate_content_type(clean_content_type)
+        file_uuid = str(uuid.uuid4())
+        env_prefix = settings.R2_ENV_PREFIX or settings.ENV
+        key = f"frontcover/{env_prefix}/{file_uuid}.{ext}"
+
+        s3 = cls.get_s3_client()
+        params = {
+            "Bucket": settings.R2_BUCKET_NAME,
+            "Key": key,
+            "ContentType": clean_content_type,
+        }
+
+        presigned_url = s3.generate_presigned_url(
+            ClientMethod="put_object",
+            Params=params,
+            ExpiresIn=PRESIGNED_URL_EXPIRES_SECONDS,
+        )
+
+        cdn_prefix = settings.R2_PUBLIC_URL_PREFIX.rstrip("/")
+        image_url = f"{cdn_prefix}/{key}"
+
+        masked_url = (
+            presigned_url.split("?")[0] if "?" in presigned_url else presigned_url
+        )
+        logger.info(
+            "Generated book cover presigned URL for member=%s, key=%s, target=%s",
+            member_id,
+            key,
+            masked_url,
+        )
+
+        return {
+            "upload_url": presigned_url,
+            "public_url": image_url,
+            "key": key,
+            "presigned_url": presigned_url,
+            "image_url": image_url,
+            "expires_in": PRESIGNED_URL_EXPIRES_SECONDS,
+        }
+
+    @classmethod
+    def _verify_uploaded_image(
+        cls,
         image_url: str | None,
         category: str,
         category_name: str,
+        member_id: uuid.UUID | None = None,
     ) -> None:
         """
         업로드 완료된 이미지 URL의 무결성을 검증하는 내부 공통 헬퍼:
         1. R2 커스텀 CDN URL이 아닌 경우 (프론트 정적 이미지, Base64 Data URL, 외부 소셜 URL 등) 허용 통과
         2. R2 CDN URL인 경우:
            - 카테고리 저장 경로 검증
-           - 본인이 발급받은 키인지 검증 (타인 키 도용 차단)
+           - member_id 지정 시 본인이 발급받은 키인지 검증 (타인 키 도용 차단)
            - R2 스토리지에 실제 업로드 완료된 객체인지 확인 (head_object)
            - 용량 상한 (5MB) 및 Content-Type 검증
            - 매직 바이트(바이너리 시그니처) 검증 및 불량 객체 자동 삭제
@@ -211,24 +262,25 @@ class StorageService:
         if not key:
             raise InvalidImageUploadException("올바른 이미지 경로가 아닙니다.")
 
-        # 키 형식 검증: category/env/{member_id}_{timestamp}_{uuid}.{ext}
+        # 키 형식 검증: category/env/...
         parts = key.split("/")
         if len(parts) < 3 or parts[0] != category:
             raise InvalidImageUploadException(
                 f"{category_name} 이미지 저장 경로가 올바르지 않습니다."
             )
 
-        filename = parts[-1]
-        expected_prefix = f"{member_id}_"
-        if not filename.startswith(expected_prefix):
-            logger.warning(
-                "Access denied: Member %s attempted to use image key owned by someone else: %s",
-                member_id,
-                key,
-            )
-            raise ImageStorageAccessDeniedException(
-                f"본인이 업로드한 {category_name} 이미지만 등록할 수 있습니다."
-            )
+        if member_id is not None:
+            filename = parts[-1]
+            expected_prefix = f"{member_id}_"
+            if not filename.startswith(expected_prefix):
+                logger.warning(
+                    "Access denied: Member %s attempted to use image key owned by someone else: %s",
+                    member_id,
+                    key,
+                )
+                raise ImageStorageAccessDeniedException(
+                    f"본인이 업로드한 {category_name} 이미지만 등록할 수 있습니다."
+                )
 
         # R2 실제 객체 존재 여부 및 메타데이터 확인
         s3 = cls.get_s3_client()
@@ -301,10 +353,10 @@ class StorageService:
            - 용량 상한 (5MB) 및 Content-Type 검증
         """
         cls._verify_uploaded_image(
-            member_id=member_id,
             image_url=image_url,
             category="profile",
             category_name="프로필",
+            member_id=member_id,
         )
 
     @classmethod
@@ -322,10 +374,30 @@ class StorageService:
            - 용량 상한 (5MB), Content-Type 및 16바이트 매직 넘버 검증
         """
         cls._verify_uploaded_image(
-            member_id=member_id,
             image_url=image_url,
             category="quote",
             category_name="스크랩",
+            member_id=member_id,
+        )
+
+    @classmethod
+    def verify_uploaded_book_cover(
+        cls,
+        image_url: str | None,
+    ) -> None:
+        """
+        도서 등록/수정 전 커스텀 표지 이미지 URL의 무결성을 검증합니다.
+        1. R2 커스텀 CDN URL이 아닌 경우 (외부 서점 표지, 정적 이미지 등) 허용 통과
+        2. R2 CDN URL인 경우:
+           - frontcover 경로 확인
+           - R2 스토리지에 실제 업로드 완료된 객체인지 확인 (head_object)
+           - 용량 상한 (5MB), Content-Type 및 16바이트 매직 넘버 검증
+        """
+        cls._verify_uploaded_image(
+            image_url=image_url,
+            category="frontcover",
+            category_name="도서 표지",
+            member_id=None,
         )
 
     @classmethod
@@ -360,8 +432,8 @@ class StorageService:
         member_id: uuid.UUID | None = None,
     ) -> None:
         """
-        이전 커스텀 이미지(프로필 또는 스크랩)를 R2 스토리지에서 삭제합니다 (미사용 객체 누적 방지).
-        삭제 실패 시에도 프로필/스크랩 수정 등 핵심 트랜잭션을 방해하지 않도록 예외는 기록만 합니다.
+        이전 커스텀 이미지(프로필, 스크랩, 도서 표지)를 R2 스토리지에서 삭제합니다 (미사용 객체 누적 방지).
+        삭제 실패 시에도 프로필/도서 수정 등 핵심 트랜잭션을 방해하지 않도록 예외는 기록만 합니다.
         """
         if not image_url or not image_url.strip():
             return
@@ -376,8 +448,8 @@ class StorageService:
         if not key:
             return
 
-        # member_id가 지정되어 있다면 해당 사용자의 이미지인 경우에만 삭제
-        if member_id is not None:
+        # member_id가 지정되어 있고 frontcover 경로가 아닌 경우에만 소유자 접두사 검증
+        if member_id is not None and not key.startswith("frontcover/"):
             filename = key.split("/")[-1]
             if not filename.startswith(f"{member_id}_"):
                 return

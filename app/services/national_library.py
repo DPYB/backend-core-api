@@ -25,6 +25,7 @@ ALLOWED_COVER_HOSTS: set[str] = {
     "image.aladin.co.kr",
     "image.yes24.com",
     "yes24.com",
+    "cdn.ai0208.xyz",
 }
 
 

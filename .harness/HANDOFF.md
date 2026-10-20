@@ -1,5 +1,32 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-20: Cloudflare R2 도서 커스텀 표지(frontcover) Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 60)
+- **배경**:
+  - 도서 직접 등록(독립 출판물, 절판 도서, 표지 부재 도서, 실물 책 직접 촬영) 및 개인화 커스텀 표지 업로드를 위해 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
+  - 가짜/타인 객체 키 도용, 미업로드 객체 등록, 5MB 용량 초과, 비이미지 위조 파일 등록을 원천 차단하고 표지 변경 및 도서 삭제 시 미사용 R2 이미지 안전 정리(Clean-up) 구현.
+- **수행 내용**:
+  1. **DTO 정의 (`app/schemas/library_book.py`)**:
+     - `BookCoverPresignedUrlRequest` (`contentType: str = "image/webp"`).
+     - `BookCoverPresignedUrlResponse`: `status="success"`, `data: {uploadUrl, publicUrl, key}` 및 기존 DTO 듀얼 필드(`presignedUrl`, `imageUrl`, `expiresIn=600`) 직렬화 지원.
+  2. **범용 스토리지 서비스 확장 (`app/services/storage_service.py`)**:
+     - `generate_book_cover_presigned_url`: `frontcover/{env}/{uuid}.{ext}` 키 발급 및 서명 쿼리스트링 로깅 마스킹.
+     - `verify_uploaded_book_cover`: R2 CDN URL에 대해 frontcover 경로, R2 실제 객체 존재 여부(`head_object`), 5MB 상한, Content-Type, 16바이트 매직 넘버 검증 및 위조 파일 자동 삭제.
+     - `delete_image_if_exists`: 프로필/스크랩/도서 커스텀 표지 공용 미사용 객체 안전 삭제 연동.
+  3. **공인 표지 호스트 등록 및 도서 서비스 연동 (`app/services/national_library.py`, `app/routers/books.py`, `app/services/book_service.py`)**:
+     - `ALLOWED_COVER_HOSTS`에 R2 CDN 도메인(`cdn.ai0208.xyz`) 등록.
+     - `POST /api/v1/library/books/cover/presigned-url` 엔드포인트 신설 (게스트/데모 403 차단).
+     - `create_book`: 커스텀 R2 표지 무결성 검증 후 DB 저장.
+     - `update_book`: 신규 표지 검증 및 DB 커밋 성공 후 이전 커스텀 표지 자동 삭제.
+     - `delete_book`: 도서 삭제 시 소속된 커스텀 표지 안전 정리.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_storage.py`에 도서 표지 Presigned URL, 무결성 검증, 위조 차단, 도서 라이프사이클 14종 신규 테스트 작성 (총 53종 전수 통과).
+     - 전체 231개 단위 테스트 100% 그린 (20.22s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 60 PR 생성 및 develop 머지 지원**:
+     - 로컬 커밋 및 PR 생성, CI 통과 확인.
+  2. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
+     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
+
 ## 2026-10-20: Cloudflare R2 문장 수집(Scrap) 이미지 Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 59)
 - **배경**:
   - 문장 수집 스크랩 시 이미지 바이너리가 백엔드 메모리/대역폭을 거치지 않도록 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
@@ -115,33 +142,3 @@
      - PR 생성 및 CI 통과 후 develop 머지 지원.
   2. **Phase 54: YES24 단건 조회 + AI Agent 장르 분류 연동**:
      - Alembic 012 `genre_confidence` 추가 및 `POST /api/v1/classify-genre` 연동.
-
-## 2026-10-16: 회원가입/인증 엔드포인트 보안 강화 및 Gmail 쿼터 다계층 보호 (Phase 55)
-- **배경**:
-  - `/signup/resend`의 30초 쿨다운만으로는 이메일 변경 가입을 통한 타인 메일 폭탄(Mail Bombing)과 Gmail 일일 500통 쿼터 고갈을 막을 수 없음.
-  - `/signup` 엔드포인트의 Rate Limit 부재, Read-then-Write 동시 요청 레이스 컨디션, `/signup/confirm`의 6자리 난수(90만 개) 브루트포스 대입 취약점, 운영 환경 SMTP 설정 누락 시 Silent Fallback 문제를 원천 차단하기 위해 다계층 보안망 구축.
-- **수행 내용**:
-  1. **IP 추출 안전성 및 Rate Limit 구축 (`app/core/rate_limit.py`)**:
-     - `CF-Connecting-IP` 최우선 신뢰 및 `X-Forwarded-For` 역순 탐색(스푸핑 방어) 안전 IP 파서 구현.
-     - `auth_rate_limiter`: `/signup`(분당 5회), `/signup/resend`(분당 3회), `/signup/confirm`(분당 10회) IP Rate Limit 적용.
-  2. **DB 기반 24시간 쿼터 상한 & DoS 방어 모니터링 (`app/services/email_service.py`)**:
-     - `EmailService.check_email_quota`: 동일 이메일 최근 24시간 5회 초과 시 429 차단, 전체 400통 도달 시 `[QUOTA_ALERT]` 경고 로그(Dry-run) 출력.
-  3. **동시성 안전성 및 락/트랜잭션 분리 (`app/routers/auth.py`, `app/services/member_service.py`)**:
-     - `/signup/resend`: `Member` 행 `with_for_update()` 락 ➔ 쿨다운/쿼터 검증 ➔ 레코드 commit(락 즉시 해제) ➔ 트랜잭션 밖에서 외부 비동기 SMTP 발송 패턴 적용 (Supabase Pooler 점유 최소화).
-     - `/signup`: 동시 가입으로 인한 DB `uq_members_email_active` 충돌 시 `IntegrityError`를 catch하여 반드시 `await db.rollback()` 수행 후 409 `EmailAlreadyExistsException` 안전 반환 (`PendingRollbackError` 원천 방지).
-  4. **브루트포스 차단 및 코드 즉시 파기 (`app/models/member.py`, Alembic `011`)**:
-     - Alembic 마이그레이션 `011_add_failed_attempts_to_email_verifications.py` 생성 및 `EmailVerification.failed_attempts` 매핑.
-     - `/signup/confirm`: `with_for_update()` 락, 불일치 시 `failed_attempts += 1`, 5회 도달 시 `expires_at = now - 1s`로 덮어써서 물리적 만료 처리 (추가 시도 원천 차단, 최대 시도 5코드×5회=25회/90만 통제).
-  5. **앱 기동 시점 SMTP Fail-Fast 검증 (`app/config.py`)**:
-     - `validate_production_settings()`에서 `ENV in ("production", "staging")`일 때 `SMTP_USER`/`SMTP_PASSWORD` 누락 시 `ValueError` 발생시켜 컨테이너 기동 즉시 fail-fast 보장.
-  6. **테스트 및 품질 검증 통과**:
-     - `tests/conftest.py`에 `reset_rate_limiters` autouse 픽스처 추가하여 테스트 간 격리 보장.
-     - `tests/test_signup.py`에 IP 제한, 이메일별 쿼터, confirm 5회 오답 차단 및 6회차 정답 차단, IntegrityError 롤백 409, SMTP fail-fast 검증 테스트 추가 (10개 테스트 전수 통과).
-     - 전체 137개 단위 테스트 100% 통과 (18.36s), ruff 및 mypy 100% 무결점 통과.
-- **다음 세션에서 이어 진행할 작업**:
-  1. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
-     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
-  2. **프론트엔드 Turnstile(봇 방지 CAPTCHA) 연동**:
-     - 가입 폼 Turnstile 검증 서버 siteverify 연동 및 400통 상한 Hard 차단 전환.
-  3. **데모 계정 자동 청소 크론 최적화**:
-     - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
