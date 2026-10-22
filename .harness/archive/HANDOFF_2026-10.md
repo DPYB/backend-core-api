@@ -155,3 +155,32 @@
      - 가입 폼 Turnstile 검증 서버 siteverify 연동 및 400통 상한 Hard 차단 전환.
   3. **데모 계정 자동 청소 크론 최적화**:
      - `.github/workflows/cleanup-demo.yml` 실행 주기 단축 및 게스트 리셋 연동.
+
+## 2026-10-18: 도서 ISBN-10/13 표준 검증 및 EAN-13 변환 유틸리티 적용 (Phase 56)
+- **배경**:
+  - 도서 등록/수정 및 검색 시 하이픈/공백 혼용, 10자리(ISBN-10)와 13자리(ISBN-13) 혼용, 결측치/빈 문자열 혼용으로 인해 동일 도서 중복 등록 및 검색 실패 위험 존재.
+  - Modulo-11 ISBN-10 검증, EAN-13 가중치 체크디지트 재계산 변환 및 13자리 표준화를 도입하여 서지 데이터 무결성 확보.
+- **수행 내용**:
+  1. **공통 ISBN 유틸리티 구축 (`app/core/isbn.py`, `app/core/__init__.py`)**:
+     - `validate_isbn10`: 10자리 길이, 체크디지트 'X'/'x' 대소문자 허용 및 Modulo-11 가중치 합 검증.
+     - `calculate_isbn13_check_digit`: 12자리 숫자에 1, 3 교대 가중치 적용하여 13번째 체크디지트 산출.
+     - `convert_isbn10_to_isbn13`: 유효한 ISBN-10 확인 후 `978` + 앞 9자리 + 신규 체크디지트 결합.
+     - `validate_isbn13`: 13자리 길이 및 EAN-13 체크디지트 유효성 검증.
+     - `normalize_isbn`: 하이픈/공백 제거 및 10자리 유효 시 13자리 자동 변환 승격, 빈 문자열 `None` 처리.
+     - `normalize_and_validate_isbn`: VALID_13, CONVERTED_10, INVALID, MISSING 4대 상태 엄격 판정.
+  2. **요청 DTO 유효성 검사 적용 (`app/schemas/library_book.py`)**:
+     - `CreateLibraryBookRequest`, `UpdateLibraryBookRequest`에 `@field_validator("isbn", mode="before")` 적용.
+     - 공백/하이픈 제거, 10자리 ➔ 13자리 자동 변환, 빈 문자열/공백은 `None` 처리, 유효하지 않은 ISBN은 422 에러 거부.
+  3. **검색 API ISBN 정규화 (`app/routers/search.py`)**:
+     - 검색어 파싱 시 마지막 자리 'X'/'x' 지원 및 10자리 입력 시 13자리로 정규화하여 YES24/도서관 검색 연동.
+  4. **도서 서비스 영속화 안전성 보장 (`app/services/book_service.py`)**:
+     - 도서 등록/수정 시 공백 문자열 DB `NULL` 저장 보장 및 ISBN-10/13 중복 등록 차단.
+  5. **테스트 및 품질 검증 통과**:
+     - `tests/test_isbn.py` 14종 신규 단위/통합 테스트 작성 (383줄).
+     - 기존 테스트 더미 ISBN 픽스처 표준 유효 번호로 정비.
+     - 전체 151개 단위 테스트 100% 통과 (18.20s), Ruff 및 Mypy 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 56 PR 생성 및 develop 머지 지원**:
+     - PR 생성 및 CI 통과 후 develop 머지 지원.
+  2. **Phase 54: YES24 단건 조회 + AI Agent 장르 분류 연동**:
+     - Alembic 012 `genre_confidence` 추가 및 `POST /api/v1/classify-genre` 연동.

@@ -15,12 +15,14 @@ class AppException(Exception):
         code: str,
         message: str,
         extra: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.code = code
         self.message = message
         self.extra = extra or {}
+        self.headers = headers or {}
 
 
 # --- 400 Bad Request ---
@@ -160,10 +162,16 @@ class RateLimitExceededException(AppException):
     def __init__(
         self,
         message: str = "요청 횟수 제한을 초과했습니다. 잠시 후 다시 시도해 주세요.",
+        retry_after: int | None = None,
     ):
+        headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
         super().__init__(
-            status.HTTP_429_TOO_MANY_REQUESTS, "RATE_LIMIT_EXCEEDED", message
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            "RATE_LIMIT_EXCEEDED",
+            message,
+            headers=headers,
         )
+        self.retry_after = retry_after
 
 
 # --- 404 Not Found ---
@@ -239,6 +247,7 @@ def register_exception_handlers(app: FastAPI) -> None:
         return JSONResponse(
             status_code=exc.status_code,
             content={"code": exc.code, "message": exc.message},
+            headers=exc.headers if exc.headers else None,
         )
 
     @app.exception_handler(RequestValidationError)

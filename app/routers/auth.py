@@ -351,17 +351,26 @@ async def resend_signup_code(
     summary="개발 및 테스트용 이메일 로그인 (프론트엔드 호환)",
 )
 async def dev_login(
+    request: Request,
     req: LoginRequest,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ) -> LoginResponse:
     """
     프론트엔드 로그인 화면 및 로컬 개발용 엔드포인트입니다.
+    - IP당 분당 10회 및 이메일당 분당 5회 Rate Limit 검증 (429 Too Many Requests)
     - 미인증 회원(PENDING_VERIFICATION)의 경우 403 EMAIL_NOT_VERIFIED 반환
     - 비밀번호 등록 회원의 경우 비밀번호 검증 (불일치 시 401)
     - 자체 Bearer JWT 및 HttpOnly 세션 쿠키 발급
     """
+    client_ip = get_client_ip(request)
     clean_email = req.email.strip().lower()
+
+    # 무차별 대입(Brute-force) 방어: IP당 10회, 이메일당 5회
+    auth_rate_limiter.check(f"login_ip:{client_ip}", max_requests=10, window_seconds=60)
+    auth_rate_limiter.check(
+        f"login_email:{clean_email}", max_requests=5, window_seconds=60
+    )
     stmt = select(Member).where(
         Member.email == clean_email,
         Member.deleted_at.is_(None),
@@ -569,16 +578,26 @@ async def check_availability(
     summary="로그인 회원 비밀번호 변경",
 )
 async def change_password(
+    request: Request,
     req: ChangePasswordRequest,
     member_id: uuid.UUID = Depends(get_authenticated_member_id),
     db: AsyncSession = Depends(get_db),
 ) -> ChangePasswordResponse:
     """
     로그인된 회원의 비밀번호를 변경합니다.
+    - IP당 분당 5회 및 회원당 분당 5회 Rate Limit 검증 (429 Too Many Requests)
     - 현재 비밀번호 검증 (불일치 시 401 Unauthorized)
     - 동일 비밀번호 거부 (400 Bad Request)
     - 복잡도 정책: 8자 이상, 영문 대/소문자, 숫자, 특수문자 포함 (400 Bad Request)
     """
+    client_ip = get_client_ip(request)
+    auth_rate_limiter.check(
+        f"pwd_change_ip:{client_ip}", max_requests=5, window_seconds=60
+    )
+    auth_rate_limiter.check(
+        f"pwd_change_member:{member_id}", max_requests=5, window_seconds=60
+    )
+
     await MemberService.change_password(
         db, member_id, req.current_password, req.new_password
     )

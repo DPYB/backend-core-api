@@ -1,4 +1,5 @@
 import ipaddress
+import math
 import time
 from collections import defaultdict
 from threading import Lock
@@ -35,8 +36,11 @@ class InMemoryRateLimiter:
             # 윈도우 이전 타임스탬프 정리
             valid_timestamps = [t for t in self._requests[key] if t > window_start]
             if len(valid_timestamps) >= max_requests:
+                oldest_valid = valid_timestamps[0]
+                retry_after = max(1, math.ceil((oldest_valid + window_seconds) - now))
                 raise RateLimitExceededException(
-                    f"요청 한도({max_requests}회/{window_seconds}초)를 초과했습니다. 잠시 후 다시 시도해 주세요."
+                    f"요청 한도({max_requests}회/{window_seconds}초)를 초과했습니다. 잠시 후 다시 시도해 주세요.",
+                    retry_after=retry_after,
                 )
             valid_timestamps.append(now)
             self._requests[key] = valid_timestamps
