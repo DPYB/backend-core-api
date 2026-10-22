@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.security import decode_jwt_token
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.db.base import Base
 from app.db.session import engine
 from app.routers import (
@@ -95,16 +96,32 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # CORS 미들웨어 (Cloudflare 프론트엔드 도메인 및 로컬 주소 지원)
-    origins = [o.strip() for o in settings.CORS_ORIGINS.split(",") if o.strip()]
+    # CORS 미들웨어 (Cloudflare 프론트엔드 도메인 및 로컬 주소 명시적 지원)
+    # allow_credentials=True 환경에서 와일드카드('*')는 브라우저 차단 및 자격증명 노출 취약점이므로 필터링
+    parsed_origins = [
+        o.strip()
+        for o in settings.CORS_ORIGINS.split(",")
+        if o.strip() and o.strip() != "*"
+    ]
+    if not parsed_origins:
+        parsed_origins = [
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "https://ai0208.xyz",
+            "https://dont-paw-get.pages.dev",
+        ]
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=origins if origins else ["*"],
+        allow_origins=parsed_origins,
         allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # OWASP 권고 5대 표준 보안 응답 헤더 및 CSP 미들웨어
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # 게스트 체험 모드 무결점 Read-Only 락 및 데모 계정 Allowlist 쓰기 가드 미들웨어
     # 데모 계정(DEMO_MEMBER_ID) 허용 쓰기 라우트 템플릿 (도서/스크랩 삭제 허용, 계정/책장 파괴 작업은 403 차단)

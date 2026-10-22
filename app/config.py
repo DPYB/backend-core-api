@@ -68,7 +68,7 @@ class Settings(BaseSettings):
     ENV: str = "local"
     PORT: int = 8000
     PROJECT_NAME: str = "backend-core-api"
-    CORS_ORIGINS: str = "*"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173,https://ai0208.xyz,https://dont-paw-get.pages.dev"
     AUTO_CREATE_TABLES: bool = False
     ALLOW_REMOTE_MIGRATION: bool = False
 
@@ -99,6 +99,16 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"CRITICAL CONFIGURATION: SMTP_USER and SMTP_PASSWORD must be configured in {self.ENV} environment! "
                     "Email verification will fail without valid SMTP credentials."
+                )
+
+            # CORS 와일드카드 검증: allow_credentials=True 환경에서 '*'는 W3C 표준 위반 및 자격증명 노출 취약점
+            parsed_origins = [
+                o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()
+            ]
+            if any(o == "*" for o in parsed_origins):
+                raise ValueError(
+                    f"CRITICAL SECURITY: CORS_ORIGINS cannot contain wildcard '*' in {self.ENV} environment "
+                    "when allow_credentials=True is enabled! Configure explicit trusted origins."
                 )
 
 
