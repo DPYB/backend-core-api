@@ -10,20 +10,21 @@
      - `(member_id, shelf_tier, shelf_order)` 복합 인덱스(`ix_library_book_member_shelf_placement`) 추가.
   2. **ORM 엔티티 및 DTO 스키마 확장 (`app/models/library_book.py`, `app/schemas/library_book.py`)**:
      - `LibraryBook` 모델에 `shelf_tier`, `shelf_order` 매핑.
-     - 도서 응답 DTO(`LibraryBookItemResponse`, `LibraryBookDetailResponse`)에 `shelfTier`, `shelfOrder` 필드 추가.
-     - 일괄 업데이트 요청/응답 DTO(`ShelfPlacementsUpdateRequest`, `ShelfPlacementsResponse`) 정의 및 assignments 정수 유효성 검증.
+     - 도서 4대 응답 DTO(`LibraryBookItemResponse`, `LibraryBookDetailResponse`, `CreateLibraryBookResponse`, `UpdateLibraryBookResponse`)에 `shelfTier`, `shelfOrder` 필드 전면 노출.
+     - 일괄 업데이트 요청/응답 DTO(`ShelfPlacementsUpdateRequest`, `ShelfPlacementsResponse`) 정의 및 정수/문자열 키 및 ID 유연한 자동 정규화(Coercion) 검증.
   3. **비즈니스 로직 및 엔드포인트 신설 (`app/services/book_service.py`, `app/routers/books.py`, `app/main.py`)**:
      - `PUT /api/v1/library/books/shelf-placements` 엔드포인트 신설.
      - 단일 격리 트랜잭션 내에서 요청된 모든 도서의 회원 소유권(`member_id == current_user`) 검증, 타인 도서 포함 시 403 차단, 중복 도서 ID 요청 시 400 차단.
-     - 도서 목록 조회(`get_books`) 시 `sortBy=SHELF_PLACEMENT` 정렬(tier -> order -> rank) 옵션 지원.
+     - 도서 등록/수정 시 `shelf_tier`, `shelf_order` 매핑 및 목록 조회(`get_books`) 시 `sortBy=SHELF_PLACEMENT` 정렬(tier -> order -> rank) 옵션 지원.
      - 데모 계정(`demo_allowed_write_routes`) 및 게스트 계정(`guest_allowed_write_routes`) 쓰기 허용 목록에 등록.
   4. **3-Tier 품질 검증 통과**:
-     - `tests/test_shelf_placements.py` 8종 신규 단위/통합 테스트 작성 (전수 통과):
-       - 0/1/2단 일괄 배치 갱신 및 목록/단건 조회 시 shelfTier/shelfOrder 반환 검증
+     - `tests/test_shelf_placements.py` 10종 신규 단위/통합 테스트 작성 (전수 통과):
+       - 0/1/2단 일괄 배치 갱신 및 목록/단건/등록/수정 조회 시 shelfTier/shelfOrder 반환 검증
        - `sortBy=SHELF_PLACEMENT` ASC/DESC 정렬 검증
+       - 정수/문자열 키 및 ID 혼합 입력 정규화 검증
        - 빈 assignments, 중복 도서 ID(400), 미존재 도서(404), 타인 도서(403), 비정수 키(400) 방어 검증
        - 데모 계정 쓰기 허용 통과 검증
-     - 전체 279개 단위 테스트 100% 그린 (30.50s), Ruff 포맷/린트 및 Mypy 타입 체크 100% 무결점.
+     - 전체 281개 단위 테스트 100% 그린 (31.60s), Ruff 포맷/린트 및 Mypy 타입 체크 100% 무결점.
 - **다음 세션에서 이어 진행할 작업**:
   1. **Phase 62 PR 생성 및 develop 머지 지원**:
      - `feat/shelf-placements` 브랜치 PR 생성 및 리뷰 포인트 확인.

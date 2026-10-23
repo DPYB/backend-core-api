@@ -242,3 +242,67 @@ async def test_demo_account_allowed_shelf_placements(db_session: AsyncSession):
         assert placement_res.json()["status"] == "success"
 
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_book_response_contains_shelf_placement(
+    client: AsyncClient,
+):
+    # 등록 시 shelfTier, shelfOrder 기본값 0 반환
+    b_res = await client.post(
+        "/api/v1/library/books",
+        json={"title": "신규 책", "author": "저자"},
+    )
+    assert b_res.status_code == 201
+    b_data = b_res.json()
+    assert b_data["shelfTier"] == 0
+    assert b_data["shelfOrder"] == 0
+    book_id = b_data["bookId"]
+
+    # 선반 배치 1단 2번으로 변경
+    await client.put(
+        "/api/v1/library/books/shelf-placements",
+        json={"assignments": {"1": [999999, 888888, book_id] if False else [book_id]}},
+    )
+
+    # 도서 정보 수정 시에도 현재 shelfTier, shelfOrder 보존 반환
+    u_res = await client.patch(
+        f"/api/v1/library/books/{book_id}",
+        json={"title": "수정된 책", "author": "저자", "readingStatus": "READING"},
+    )
+    assert u_res.status_code == 200
+    u_data = u_res.json()
+    assert u_data["shelfTier"] == 1
+    assert u_data["shelfOrder"] == 0
+
+
+@pytest.mark.asyncio
+async def test_update_shelf_placements_string_and_int_coercion(client: AsyncClient):
+    b1_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "책 1", "author": "저자 1"},
+        )
+    ).json()["bookId"]
+    b2_id = (
+        await client.post(
+            "/api/v1/library/books",
+            json={"title": "책 2", "author": "저자 2"},
+        )
+    ).json()["bookId"]
+
+    # 문자열 ID 배열 ['123'] 및 정수 선반 키 0 혼합 입력 유연 처리
+    res = await client.put(
+        "/api/v1/library/books/shelf-placements",
+        json={"assignments": {0: [str(b1_id)], "1": [b2_id]}},
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+
+    detail_b1 = (await client.get(f"/api/v1/library/books/{b1_id}")).json()
+    assert detail_b1["shelfTier"] == 0
+    assert detail_b1["shelfOrder"] == 0
+
+    detail_b2 = (await client.get(f"/api/v1/library/books/{b2_id}")).json()
+    assert detail_b2["shelfTier"] == 1
+    assert detail_b2["shelfOrder"] == 0
