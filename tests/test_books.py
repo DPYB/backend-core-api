@@ -22,8 +22,9 @@ async def test_create_book_success(client: AsyncClient):
     data = resp.json()
     assert data["title"] == "클린 아키텍처"
     assert data["genre"] == "TECHNOLOGY"
-    assert data["genreName"] == "컴퓨터 프로그래밍"  # Subject 1순위 노출
-    assert data["displayGenre"] == "컴퓨터 프로그래밍"
+    assert data["genreName"] == "기술과학"  # 대분류 본연의 명칭 보존
+    assert data["subject"] == "컴퓨터 프로그래밍"
+    assert data["displayGenre"] == "컴퓨터 프로그래밍"  # 세부 주제 1순위 노출
     assert data["progress"] == 10.0
     assert "shelfRank" in data
     assert "shelfId" in data
@@ -390,9 +391,9 @@ async def test_create_book_flexible_genre_inputs(client: AsyncClient):
     assert resp1.status_code == 201
     d1 = resp1.json()
     assert d1["genre"] == "LITERATURE"
-    assert d1["genreName"] == "SF"  # Subject 1순위 보장
-    assert d1["subject"] == "SF"
-    assert d1["displayGenre"] == "SF"
+    assert d1["genreName"] == "문학"  # 대분류 고유 한글명
+    assert d1["subject"] == "SF/과학소설"
+    assert d1["displayGenre"] == "SF/과학소설"  # 세부 주제 1순위 노출
 
     # 2. 한글 '에세이' 장르 입력
     resp2 = await client.post(

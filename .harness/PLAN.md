@@ -2,9 +2,16 @@
 
 본 레포에서 아직 안 끝난 계획과 체크리스트만 담는다. 완료된 항목은 STATE.md로 옮긴 뒤 제거한다.
 
-## Phase 63: 글로벌 도서 검색 1단계 (Google Books 연동)
-- [x] `app/services/google_books.py`: `GoogleBooksClient` 구현 (키워드/ISBN 검색, ISBN-13 우선, Cache-Control 준수, 429/타임아웃 장애 격리)
-- [x] `app/services/google_books.py`: `lookup_by_isbn` 요청-응답 볼륨 간 ISBN 엄격 대조 및 불일치/누락 시 차단
-- [x] `app/schemas/search.py`: `BookSearchItem.data_source` 필드 추가 및 `BookSearchResponse.books` computed field 직렬화 호환성 보장
-- [x] `app/routers/search.py`: 키워드 및 ISBN 검색 시 잔여 Deadline(4.5s) 기반 Google Books 조건부 호출 + 기존 로컬 DB 검색 최종 유지
-- [x] `tests/test_google_books.py`: 24종 신규 단위/통합 테스트 작성 및 기존 247개 회귀 테스트 통과 검증 (총 271개 100% 통과)
+## 후속 작업 계획
+
+### 1. Google Cloud Run 운영 환경 배포 및 키 주입 점검
+- [ ] Google Cloud Run 콘솔에 `GOOGLE_BOOKS_API_KEY` 환경변수 주입
+- [ ] 스테이징/운영 배포 후 라이브 원서 검색 및 표지/메타데이터 연동 점검
+
+### 2. Google Books 원본 categories 직렬화 후속 과제 (Phase 63 2단계)
+- [ ] Core API `BookSearchItem.subject`로 Google Books `categories` 원본 직렬화 지원
+- [ ] AI 에이전트 서비스 연계 시 힌트로 활용할 수 있도록 계약 고도화
+
+### 3. 크로스 서비스 데이터 계약 동기화
+- [ ] AI 에이전트 서비스: `CLASSIFY_GENRE_SYSTEM_PROMPT`에서 KDC/DDC 분리 기준 명시 및 `subject` 필수 도출 규칙 반영
+- [ ] 프론트엔드 웹: 도서 칩 노출 시 `displayGenre || subject || genreLabel(genre)` 우선순위 통일

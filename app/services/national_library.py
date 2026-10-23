@@ -11,7 +11,6 @@ from app.core.kdc_mapper import (
     kdc_to_subject,
     parse_page_number,
     parse_publish_date,
-    refine_subject_by_keywords,
 )
 from app.schemas.search import ExternalBook
 
@@ -154,27 +153,12 @@ class NationalLibraryClient:
         raw_subject = item.get("SUBJECT")
         genre = kdc_to_genre(raw_kdc)
 
-        # 세부 주제(SF, 에세이, 소설, IT 등) 우선 추출 (없을 시 비숫자 raw_subject 활용)
-        inferred_subject = kdc_to_subject(raw_kdc)
-        if (
-            not inferred_subject
-            and raw_subject
-            and not str(raw_subject).strip().isdigit()
-        ):
+        # 공식 주제어(raw_subject)가 있으면 최우선 보존, 없으면 KDC 기반 표준 주제어 도출
+        inferred_subject = None
+        if raw_subject and not str(raw_subject).strip().isdigit():
             inferred_subject = str(raw_subject).strip()
-
-        # 외국 SF 소설 등 KDC 800번대 한계 보완: 도서 제목 및 부가정보 기반 SF 오버라이드
-        title = item.get("TITLE", "")
-        raw_description = item.get("DESCRIPTION") or (
-            str(raw_subject)
-            if raw_subject and not str(raw_subject).strip().isdigit()
-            else None
-        )
-        inferred_subject = refine_subject_by_keywords(
-            title=title,
-            subject=inferred_subject,
-            description=raw_description,
-        )
+        else:
+            inferred_subject = kdc_to_subject(raw_kdc)
 
         final_isbn = item.get("EA_ISBN") or clean_isbn
         cover_url = get_verified_cover_url(item.get("TITLE_URL"), final_isbn)
@@ -190,6 +174,7 @@ class NationalLibraryClient:
             published_date=parse_publish_date(item.get("PUBLISH_PREDATE")),
             total_pages=parse_page_number(item.get("PAGE")),
             cover_url=cover_url,
+            data_source="NL",
         )
 
         # 성공 도서 캐싱

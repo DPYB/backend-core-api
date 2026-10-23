@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, Query
@@ -8,10 +9,11 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidSearchParameterException
+from app.core.genre_mapper import parse_to_genre_and_subject
 from app.core.isbn import normalize_isbn
-from app.core.kdc_mapper import parse_to_genre_and_subject
 from app.core.security import get_optional_member_id
 from app.db.session import get_db
+from app.models.enums import GenreType
 from app.models.library_book import LibraryBook
 from app.schemas.library_book import LibraryBookDetailResponse
 from app.schemas.search import (
@@ -21,6 +23,7 @@ from app.schemas.search import (
     SearchLibraryBookDetail,
 )
 from app.services.book_service import BookService
+from app.services.google_books import GoogleBooksClient
 from app.services.national_library import NationalLibraryClient
 from app.services.yes24 import Yes24Client
 
@@ -29,6 +32,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/books", tags=["Book Discovery"])
 client = NationalLibraryClient()
 yes24_client = Yes24Client()
+google_books_client = GoogleBooksClient()
+
+
+def get_search_time() -> float:
+    """테스트 시 시간 측정을 주입(Mock)할 수 있도록 분리한 단조 시계 함수."""
+    return time.monotonic()
+
 
 ISBN_REGEX = re.compile(r"^(?:[0-9]{9}[0-9Xx]|[0-9]{13})$")
 
@@ -80,10 +90,25 @@ async def search_book(
         except ValueError:
             pass
 
-    # 1. YES24 키워드 검색 우선 시도
-    yes24_items = await yes24_client.search_books(
-        query=search_keyword, page=1, page_size=limit
-    )
+    # 1. YES24 키워드 검색 우선 시도 (전체 요청 Deadline 4.5초 예산 통제)
+    start_time = get_search_time()
+    TOTAL_DEADLINE = 4.5
+
+    yes24_items: list[BookSearchItem] = []
+    try:
+        yes24_items = await asyncio.wait_for(
+            yes24_client.search_books(query=search_keyword, page=1, page_size=limit),
+            timeout=2.5,
+        )
+    except TimeoutError:
+        logger.warning(
+            f"YES24 키워드 검색 타임아웃 (2.5s 초과, Query: {search_keyword})"
+        )
+        yes24_items = []
+    except Exception as e:
+        logger.warning(f"YES24 키워드 검색 예외 발생: {e} (Query: {search_keyword})")
+        yes24_items = []
+
     if yes24_items:
         # 내 서재 등록 여부(is_registered) 일괄 매핑
         if member_id:
@@ -108,7 +133,56 @@ async def search_book(
             book=None,
         )
 
-    # 2. YES24 미연동 또는 미검색 시: 로컬 서재 및 전체 도서 풀 fallback
+    # 2. YES24 미연동 또는 검색 결과 0건 시: 잔여 시간 예산 내 Google Books 폴백 시도
+    elapsed = get_search_time() - start_time
+    remaining = TOTAL_DEADLINE - elapsed
+    if remaining >= 1.0:
+        gb_timeout = min(2.0, remaining - 0.2)
+        try:
+            gb_items = await asyncio.wait_for(
+                google_books_client.search_books(
+                    query=search_keyword, limit=limit, timeout=gb_timeout
+                ),
+                timeout=gb_timeout,
+            )
+            if gb_items:
+                if member_id:
+                    isbns = [it.isbn for it in gb_items if it.isbn]
+                    if isbns:
+                        reg_stmt = select(LibraryBook.isbn).where(
+                            LibraryBook.member_id == member_id,
+                            LibraryBook.isbn.in_(isbns),
+                            LibraryBook.deleted_at.is_(None),
+                        )
+                        registered_isbns = set(
+                            (await db.execute(reg_stmt)).scalars().all()
+                        )
+                        for it in gb_items:
+                            if it.isbn in registered_isbns:
+                                it.is_registered = True
+
+                return BookSearchResponse(
+                    query=search_keyword,
+                    total=len(gb_items),
+                    items=gb_items,
+                    already_registered=any(it.is_registered for it in gb_items),
+                    library_book=None,
+                    book=None,
+                )
+        except TimeoutError:
+            logger.warning(
+                f"Google Books 폴백 타임아웃 ({gb_timeout:.2f}s 초과, Query: {search_keyword})"
+            )
+        except Exception as e:
+            logger.warning(
+                f"Google Books 폴백 호출 중 예외 발생: {e} (Query: {search_keyword})"
+            )
+    else:
+        logger.info(
+            f"잔여 Deadline 부족 ({remaining:.2f}s < 1.0s)으로 Google Books 검색 생략 (Query: {search_keyword})"
+        )
+
+    # 3. YES24 및 Google Books 모두 미검색 시: 로컬 서재 및 전체 도서 풀 fallback
     if member_id:
         stmt = (
             select(LibraryBook)
@@ -253,7 +327,10 @@ async def _search_by_isbn(
             book=None,
         )
 
-    # 2. 미등록 도서인 경우 YES24 + 국립중앙도서관 API 병렬(asyncio.gather) 조회
+    # 2. 미등록 도서인 경우 YES24 + 국립중앙도서관 API 병렬(asyncio.gather) 조회 (전체 요청 Deadline 4.5초 예산 통제)
+    start_time = get_search_time()
+    TOTAL_DEADLINE = 4.5
+
     #    - YES24: 상세 줄거리(description), 실쪽수(total_pages), 고화질 표지(cover_url), 상품링크(link)
     #    - 국립도서관: 정식 KDC 분류기호(kdc), 세부 주제어(subject), 대분류(genre)
     async def fetch_yes24() -> BookSearchItem | None:
@@ -289,7 +366,7 @@ async def _search_by_isbn(
 
     external_book: ExternalBook | None = None
     if yes24_item and nl_book:
-        # 양쪽 모두 성공 시: YES24(소개글, 쪽수, 표지, 링크) + 국립도서관(KDC, 장르, 주제어, 서지명) 융합
+        # 양쪽 모두 성공 시: YES24(대표 서지: 소개글, 쪽수, 표지, 링크) + 국립도서관(공식 분류: KDC, 장르, 주제어) 융합
         external_book = ExternalBook(
             title=nl_book.title or yes24_item.title,
             author=nl_book.author or yes24_item.author,
@@ -306,9 +383,10 @@ async def _search_by_isbn(
             genre_source=nl_book.genre_source or "KDC",
             genre_confidence=None,
             link=yes24_item.link,
+            data_source="YES24",
         )
     elif yes24_item:
-        # YES24만 성공 시: 소개글/표지/쪽수 확보 및 KDC 매퍼로 1차 장르 추론
+        # YES24만 성공 시: 소개글/표지/쪽수 확보 및 경량 Fallback 매핑 (KDC 부재)
         inferred_genre, inferred_subject = parse_to_genre_and_subject(
             genre_input=None,
             current_subject=None,
@@ -327,13 +405,41 @@ async def _search_by_isbn(
             cover_url=yes24_item.cover_url,
             side_cover_url=yes24_item.side_cover_url,
             description=yes24_item.description,
-            genre_source="KDC",
+            genre_source="FALLBACK" if inferred_genre != GenreType.NONE else "NONE",
             genre_confidence=None,
             link=yes24_item.link,
+            data_source="YES24",
         )
     elif nl_book:
         # 국립도서관만 성공 시
         external_book = nl_book
+    else:
+        # 3. 기존 공급자(YES24, 국립중앙도서관)가 모두 유효 서지정보를 반환하지 못한 경우에만:
+        #    잔여 시간 예산(Deadline 4.5s) 확인 후 Google Books 최종 보완 조회 시도
+        elapsed = get_search_time() - start_time
+        remaining = TOTAL_DEADLINE - elapsed
+        if remaining >= 1.0:
+            gb_timeout = min(2.0, remaining - 0.2)
+            try:
+                external_book = await asyncio.wait_for(
+                    google_books_client.lookup_by_isbn(clean_isbn, timeout=gb_timeout),
+                    timeout=gb_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    f"Google Books ISBN 조회 타임아웃 ({gb_timeout:.2f}s 초과, ISBN: {clean_isbn})"
+                )
+                external_book = None
+            except Exception as e:
+                logger.warning(
+                    f"Google Books lookup_by_isbn 예외 발생: {e} (ISBN: {clean_isbn})"
+                )
+                external_book = None
+        else:
+            logger.info(
+                f"잔여 Deadline 부족 ({remaining:.2f}s < 1.0s)으로 Google Books ISBN 조회 생략 (ISBN: {clean_isbn})"
+            )
+            external_book = None
 
     return BookSearchResponse(
         query=display_query,

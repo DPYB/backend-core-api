@@ -3,16 +3,25 @@ from datetime import date, datetime
 from pydantic import Field, computed_field, field_validator, model_validator
 
 from app.core.exceptions import InvalidReorderTargetException
+from app.core.genre_mapper import (
+    GENRE_KOREAN_NAMES,
+    parse_to_genre_and_subject,
+)
 from app.core.isbn import normalize_isbn
 from app.core.kdc_mapper import (
-    GENRE_KOREAN_NAMES,
     parse_to_date,
-    parse_to_genre_and_subject,
 )
 from app.models.enums import BookReadingStatus, GenreType, LibrarianType
 from app.schemas.common import CamelModel, PaginatedResponse
 
-ALLOWED_GENRE_SOURCES: set[str] = {"KDC", "LLM", "KDC_FALLBACK", "USER"}
+ALLOWED_GENRE_SOURCES: set[str] = {
+    "KDC",
+    "DDC",
+    "LLM",
+    "FALLBACK",
+    "USER",
+    "KDC_FALLBACK",
+}
 
 
 class BookCoverPresignedUrlRequest(CamelModel):
@@ -143,9 +152,7 @@ class CreateLibraryBookResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
-        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
-        if self.subject and self.subject.strip():
-            return self.subject.strip()
+        """대분류 한글명 본연의 값 반환 (교양, 철학, 문학, 기술과학 등)"""
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -188,9 +195,7 @@ class LibraryBookItemResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
-        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
-        if self.subject and self.subject.strip():
-            return self.subject.strip()
+        """대분류 한글명 본연의 값 반환 (교양, 철학, 문학, 기술과학 등)"""
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -243,9 +248,7 @@ class LibraryBookDetailResponse(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
-        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
-        if self.subject and self.subject.strip():
-            return self.subject.strip()
+        """대분류 한글명 본연의 값 반환 (교양, 철학, 문학, 기술과학 등)"""
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field

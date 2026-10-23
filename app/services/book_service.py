@@ -158,6 +158,25 @@ class BookService:
         final_genre_source = req.genre_source or "KDC"
         final_genre_confidence = req.genre_confidence
 
+        # YES24 등 외부 서지 등록 시 공식 KDC가 누락된 경우 국립도서관 공인 KDC 보완 조회 시도 (1차 공식 분류 확보)
+        if not final_kdc and clean_isbn and final_genre_source != "USER":
+            try:
+                from app.services.national_library import NationalLibraryClient
+
+                nl_client = NationalLibraryClient()
+                nl_book = await nl_client.lookup_by_isbn(clean_isbn)
+                if nl_book and nl_book.kdc:
+                    final_kdc = nl_book.kdc
+                    if final_genre == GenreType.NONE:
+                        final_genre = nl_book.genre
+                        final_genre_source = "KDC"
+                    if not final_subject and nl_book.subject:
+                        final_subject = nl_book.subject
+            except Exception as e:
+                logger.warning(
+                    f"도서 등록 중 국립도서관 KDC 보완 조회 실패: {e} (ISBN: {clean_isbn})"
+                )
+
         if final_genre_source != "USER":
             cached_book = None
             if clean_isbn:
@@ -587,6 +606,20 @@ class BookService:
         else:
             book.completed_at = None
 
+        # 사용자가 장르 또는 세부 주제어를 직접 수정한 경우 USER 출처로 승격하여 향후 자동 덮어쓰기 영구 방어
+        genre_changed = (req.genre != book.genre) or (
+            req.subject is not None
+            and req.subject.strip() != (book.subject or "").strip()
+        )
+        if genre_changed:
+            book.genre_source = "USER"
+            book.genre_confidence = None
+        elif req.genre_source is not None:
+            book.genre_source = req.genre_source
+
+        if req.genre_confidence is not None and not genre_changed:
+            book.genre_confidence = req.genre_confidence
+
         # ADR-0006: 11개 필드 전체 반영 (null 허용 필드는 null 전달 시 초기화)
         book.title = req.title.strip()
         book.author = req.author.strip()
@@ -609,10 +642,6 @@ class BookService:
         book.total_pages = req.total_pages
         if req.description is not None:
             book.description = req.description.strip() if req.description else None
-        if req.genre_source is not None:
-            book.genre_source = req.genre_source
-        if req.genre_confidence is not None:
-            book.genre_confidence = req.genre_confidence
 
         await db.commit()
         await db.refresh(book)

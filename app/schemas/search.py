@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import computed_field
 
-from app.core.kdc_mapper import GENRE_KOREAN_NAMES
+from app.core.genre_mapper import GENRE_KOREAN_NAMES
 from app.models.enums import BookReadingStatus, GenreType
 from app.schemas.common import CamelModel
 
@@ -23,13 +23,12 @@ class ExternalBook(CamelModel):
     genre_source: str = "KDC"
     genre_confidence: float | None = None
     link: str | None = None
+    data_source: str = "NL"
 
     @computed_field
     @property
     def genre_name(self) -> str:
-        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
-        if self.subject and self.subject.strip():
-            return self.subject.strip()
+        """대분류 한글명 본연의 값 반환 (교양, 철학, 문학, 기술과학 등)"""
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -63,9 +62,7 @@ class SearchLibraryBookDetail(CamelModel):
     @computed_field
     @property
     def genre_name(self) -> str:
-        """프론트엔드가 genreName을 렌더링하더라도 세부 주제(Subject)가 있으면 1순위 노출"""
-        if self.subject and self.subject.strip():
-            return self.subject.strip()
+        """대분류 한글명 본연의 값 반환 (교양, 철학, 문학, 기술과학 등)"""
         return GENRE_KOREAN_NAMES.get(self.genre, "기타/미분류")
 
     @computed_field
@@ -97,6 +94,7 @@ class BookSearchItem(CamelModel):
     link: str | None = None
     is_registered: bool = False
     star_score: float | None = None
+    data_source: str = "YES24"
 
 
 class BookSearchResponse(CamelModel):
@@ -128,6 +126,7 @@ class BookSearchResponse(CamelModel):
                     "is_registered": item.is_registered,
                     "star_score": item.star_score,
                     "link": item.link,
+                    "data_source": item.data_source,
                 }
                 for item in self.items
             ]
