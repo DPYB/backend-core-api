@@ -1,5 +1,35 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-23: 책장 선반(Shelf Placement) 배치 일괄 동기화 API 구축 (Phase 62)
+- **배경**:
+  - 프론트엔드가 3D 책장의 단/층(0, 1, 2단...) 드래그 앤 드롭 배치를 브라우저 `localStorage`로만 임시 관리하고 있어, 새로고침이나 기기 변경 시 배치가 도서 등록순으로 원상 복구되는 한계 해소.
+  - 책장 내 단/선반(`shelf_tier`) 및 선반 내 순서(`shelf_order`)를 DB(`core.library_book`)에 영속화하고, 드래그 앤 드롭 완료 시 일괄 동기화하는 API 구축.
+- **수행 내용**:
+  1. **DB 마이그레이션 (`alembic/versions/013_add_shelf_placement_columns.py`)**:
+     - `core.library_book` 테이블에 `shelf_tier INT NOT NULL DEFAULT 0`, `shelf_order INT NOT NULL DEFAULT 0` 컬럼 추가.
+     - `(member_id, shelf_tier, shelf_order)` 복합 인덱스(`ix_library_book_member_shelf_placement`) 추가.
+  2. **ORM 엔티티 및 DTO 스키마 확장 (`app/models/library_book.py`, `app/schemas/library_book.py`)**:
+     - `LibraryBook` 모델에 `shelf_tier`, `shelf_order` 매핑.
+     - 도서 응답 DTO(`LibraryBookItemResponse`, `LibraryBookDetailResponse`)에 `shelfTier`, `shelfOrder` 필드 추가.
+     - 일괄 업데이트 요청/응답 DTO(`ShelfPlacementsUpdateRequest`, `ShelfPlacementsResponse`) 정의 및 assignments 정수 유효성 검증.
+  3. **비즈니스 로직 및 엔드포인트 신설 (`app/services/book_service.py`, `app/routers/books.py`, `app/main.py`)**:
+     - `PUT /api/v1/library/books/shelf-placements` 엔드포인트 신설.
+     - 단일 격리 트랜잭션 내에서 요청된 모든 도서의 회원 소유권(`member_id == current_user`) 검증, 타인 도서 포함 시 403 차단, 중복 도서 ID 요청 시 400 차단.
+     - 도서 목록 조회(`get_books`) 시 `sortBy=SHELF_PLACEMENT` 정렬(tier -> order -> rank) 옵션 지원.
+     - 데모 계정(`demo_allowed_write_routes`) 및 게스트 계정(`guest_allowed_write_routes`) 쓰기 허용 목록에 등록.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_shelf_placements.py` 8종 신규 단위/통합 테스트 작성 (전수 통과):
+       - 0/1/2단 일괄 배치 갱신 및 목록/단건 조회 시 shelfTier/shelfOrder 반환 검증
+       - `sortBy=SHELF_PLACEMENT` ASC/DESC 정렬 검증
+       - 빈 assignments, 중복 도서 ID(400), 미존재 도서(404), 타인 도서(403), 비정수 키(400) 방어 검증
+       - 데모 계정 쓰기 허용 통과 검증
+     - 전체 279개 단위 테스트 100% 그린 (30.50s), Ruff 포맷/린트 및 Mypy 타입 체크 100% 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 62 PR 생성 및 develop 머지 지원**:
+     - `feat/shelf-placements` 브랜치 PR 생성 및 리뷰 포인트 확인.
+  2. **글로벌 도서 API 연동 (Google Books API - Phase 63 마무리 및 PR)**:
+     - 대기 중인 Google Books 연동 로직 검증 및 머지.
+
 ## 2026-10-22: 상용화 대비 웹 보안 강화 (보안 응답 헤더 미들웨어 및 인증 무차별 대입 Rate Limiting 구축) (Phase 61)
 - **배경**:
   - 해커톤 프로토타입 단계에서 누락되었던 상용 서비스 수준의 웹 보안 심층 방어(Defense in Depth) 구축.
@@ -25,11 +55,16 @@
        - 로그인/비밀번호 Rate Limit, 이메일 정규화 방어, 제한 독립성, 동시성 검증 (6종)
        - 허용/비허용 Origin 및 OPTIONS 프리플라이트 처리 검증 (3종)
      - 전체 243개 단위 테스트 100% 그린 (24.22s), Ruff 포맷/린트 및 Mypy 타입 체크 100% 무결점.
-- **다음 세션에서 이어 진행할 작업**:
-  1. **Phase 61 PR 생성 및 develop 머지 지원**:
-     - `feat/security-headers-and-rate-limit` 브랜치 커밋 및 PR 생성.
-  2. **도서 메타데이터 PATCH 부분 수정(Partial Update) 옵션 검토 및 구현**:
-     - `PATCH /api/v1/library/books/{book_id}` Full-Payload 완화.
+- **다음 세션에서 이어 진행할 작업 (Phase 62 최우선 착수)**:
+  1. **책장 선반(Shelf Placement) 배치 일괄 동기화 API 구축 (Phase 62)**:
+     - **배경**: 현재 프론트엔드가 책장의 단/층(0, 1, 2단...) 드래그 앤 드롭 배치를 `localStorage`로 임시 보관 중이며, 모바일 ↔ PC 간 선반 배치 동기화를 위해 백엔드 DB 영속화 필요.
+     - **DB 모델 확장 (Alembic 013)**: `core.library_book` 테이블에 선반 단/층(`shelf_tier` 또는 `tier_index`: INT, default 0) 및 선반 내 순서(`shelf_order`: INT, default 0) 컬럼 추가.
+     - **일괄 업데이트 API 엔드포인트 신설**: `PUT /api/v1/library/books/shelf-placements`
+       - DTO: `ShelfPlacementUpdateRequest` (`librarianType: LibrarianType`, `assignments: dict[str, list[int]]`)
+       - 단일 격리 트랜잭션에서 회원 소유권 검증 및 도서들의 `shelf_tier`, `shelf_order` 일괄 갱신.
+     - **단위/통합 테스트 작성**: 선반 배치 변경, 타인 도서 위조 차단, 순서 반영 검증.
+  2. **글로벌 도서 API 연동 (Google Books API)**:
+     - 리서치 문서(`docs/GLOBAL_BOOK_API_DECISION.md`) 기반 2차 작업으로 대기.
 
 ## 2026-10-20: Cloudflare R2 도서 커스텀 표지(frontcover) Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 60)
 - **배경**:
@@ -114,33 +149,3 @@
      - 단위/통합 테스트 작성 (201개 단위 테스트 100% 그린 유지) 및 PR 생성
   2. **Cloud Run 배포 및 R2 실환경 모니터링**:
      - PR #46 머지 후 Cloud Run 자동 빌드 배포 성공 확인 및 프론트엔드 연동 지원.
-
-## 2026-10-18: YES24 단건 조회 + AI Agent 장르 분류 연동 및 캐시 재사용 파이프라인 구축 (Phase 57)
-- **배경**:
-  - AI 에이전트 서비스(`backend-ai-agent#68`)의 Gemini Flash-Lite 기반 `POST /api/v1/classify-genre` API 구축 완료에 맞춰, 본 레포(`backend-core-api`)의 도서 등록 및 서지 융합 파이프라인 연동.
-  - YES24(소개글/쪽수/표지) + 국립중앙도서관(KDC 힌트) + AI 장르 분류 클라이언트(장르/세부주제 정밀 판정) 삼각 결합 완성.
-  - 동일 ISBN 재등록 시 캐시 재활용으로 LLM 호출 최소화 및 개인 수정값 전파 방지(`genre_source != 'USER'`).
-- **수행 내용**:
-  1. **Alembic 마이그레이션 및 ORM/DTO 갱신 (`alembic/versions/012_add_genre_confidence.py`)**:
-     - `core.library_book` 테이블에 `genre_confidence FLOAT NULL` 컬럼 추가.
-     - `LibraryBook` ORM 모델 및 Pydantic DTO(`CreateLibraryBookRequest`, `LibraryBookItemResponse`, `LibraryBookDetailResponse`, `UpdateLibraryBookRequest`, `UpdateLibraryBookResponse`, `ExternalBook`, `SearchLibraryBookDetail`, `BookSearchItem`) 동기화.
-  2. **YES24 단건 조회 및 상품 링크 지원 (`app/services/yes24.py`)**:
-     - `lookup_by_isbn(isbn: str)` 단건 조회 및 15분 TTL 캐싱 구축, 상품 상세 URL(`link`) 파싱 지원.
-     - 불일치 ISBN 첫 번째 결과 채택 안티패턴 제거 및 정규화 기반 엄격한 ISBN 일치 검사 구축.
-  3. **AiAgentClient 신설 및 Graceful Fallback (`app/services/ai_agent.py`)**:
-     - `classify_genre` 비동기 클라이언트 구현 (`POST /api/v1/classify-genre`).
-     - 2.5초 하드 타임아웃(`httpx.Timeout(2.5)`) 및 외부 에러/지연 시 KDC 기반 `parse_to_genre_and_subject` Graceful Fallback (`source="KDC_FALLBACK"`).
-  4. **도서 등록 캐시 재사용, 일관성 보장 및 사용자 수정 보호 (`app/services/book_service.py`)**:
-     - `create_book`: 동일 ISBN 기등록 도서 탐색 시 `genre_source != 'USER'`인 경우 기존 장르/주제/신뢰도 재사용 (LLM 호출 $0 최적화).
-     - LLM 캐시 히트 시 장르/출처/신뢰도 일관성 보장(기존 요청 KDC 장르가 있더라도 LLM 캐시 장르로 승격) 및 `genre_source` 4대 허용값(`ALLOWED_GENRE_SOURCES`) 검증.
-     - 사용자 수동 입력/수정(`genre_source == 'USER'`)은 AI 분류 결과로 덮어쓰지 않고 최우선 보존.
-  5. **서지 검색 병렬 융합 (`app/routers/search.py`)**:
-     - `_search_by_isbn`: `asyncio.gather`로 YES24와 국립중앙도서관 동시 조회 후 메타데이터 우선순위 합성 (편측 실패 격리).
-  6. **3-Tier 품질 검증 통과**:
-     - `tests/test_ai_agent.py` (6종), `tests/test_genre_pipeline.py` (11종) 단위/통합 테스트 신설.
-     - 168개 단위 테스트 전수 통과 (19.23s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
-- **다음 세션에서 이어 진행할 작업**:
-  1. **Phase 57 PR 생성 및 develop 머지 지원**:
-     - 로컬 커밋 상태 점검 후 PR 생성 및 CI 통과 확인.
-  2. **Google Cloud Run 배포 마이그레이션**:
-     - `YES_24_API_KEY` 실환경 환경변수 주입 및 컨테이너 기동 검증.
