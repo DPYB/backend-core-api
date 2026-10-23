@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import httpx
 
 from app.config import settings
-from app.core.kdc_mapper import parse_to_genre_and_subject
+from app.core.genre_mapper import parse_to_genre_and_subject
 from app.models.enums import GenreType
 
 logger = logging.getLogger(__name__)

@@ -1,5 +1,53 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-24: 도서 분류 체계(KDC/DDC/Genre) 물리적 모듈 분리 및 삼각 데이터 계약 정비 (Phase 64)
+- **배경**:
+  - `kdc_mapper.py` 내 DDC 매핑 공존으로 인한 네이밍/책임 불일치(Misnomer) 해소 및 분류 체계별 물리적 모듈 격리.
+  - `catalog`(KR vs US), `data_source`(YES24, GOOGLE, NL), `genre_source`(KDC, DDC, LLM, FALLBACK, USER) 삼각 데이터 계약 확립.
+  - KDC 004/005 컴퓨터과학 도서의 안 A(대분류 `GENERAL` + `subject="컴퓨터/IT"` + `displayGenre="컴퓨터/IT"`) 확정 및 사용자 수정값 영구 보호.
+- **수행 내용**:
+  1. **물리적 모듈 3단 분리 (`app/core/kdc_mapper.py`, `app/core/ddc_mapper.py`, `app/core/genre_mapper.py`)**:
+     - `kdc_mapper.py`: 순수 KDC(한국십진분류법 제6판) 전담 매퍼 (`kdc_to_genre`, `kdc_to_subject`, `extract_kdc_code`).
+     - `ddc_mapper.py`: 순수 DDC(듀이십진분류법 제23판) 전담 매퍼 신설 (`ddc_to_genre`, `extract_ddc_code`, 400 언어/500 자연과학/600 기술과학/700 예술).
+     - `genre_mapper.py`: 통합 장르 오케스트레이터 신설 (`parse_to_genre_and_subject`, `fallback_genre_by_keywords`, `GENRE_KOREAN_NAMES`).
+     - PEP 562 `__getattr__` 기반 지연 평가로 순환 참조 방지 및 레거시 import 하위 호환성 100% 보장.
+  2. **서지 데이터 계약 및 DTO 정합성 확보**:
+     - `data_source`와 `genre_source` 독립성 보장.
+     - `ExternalBook` 및 `LibraryBook` DTO에서 `genreName`은 대분류 고유 한글명, `displayGenre`는 세부 주제어 1순위 노출 확립.
+     - `update_book` 시 장르/주제어 변경 시 `genre_source="USER"` 승격 및 이후 모든 자동 갱신 덮어쓰기 영구 차단.
+  3. **3-Tier 품질 검증 통과**:
+     - `tests/test_genre_contract.py` 8대 계약 테스트(T1~T8) 작성 및 전수 통과.
+     - `tests/test_ddc_mapper.py`, `tests/test_genre_mapper.py`, `tests/test_kdc_mapper.py` 전수 통과.
+     - 299개 전체 단위 테스트 100% 통과 (30.86s), Ruff 및 Mypy 125개 소스 파일 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 64 커밋 및 develop PR 생성**:
+     - 사용자 컨펌 후 Phase 63/64 원자적 분할 커밋 및 PR 생성.
+  2. **크로스 서비스 데이터 계약 연계 지원**:
+     - AI 에이전트 서비스: `CLASSIFY_GENRE_SYSTEM_PROMPT` KDC/DDC 분리 명시 및 `subject` 필수 도출 규칙 반영.
+     - 프론트엔드 웹: 장르 칩 표시 순서(`displayGenre || subject || genreLabel(genre)`) 통일.
+
+## 2026-10-24: 해외 도서 베타 연동 최종 게이트 교차 검증 및 프론트엔드 E2E 통과 (Phase 70-6)
+- **배경**:
+  - 해외 도서(Google Books API) 검색 및 AI 에이전트 서비스 연계 규격에 대한 최종 교차 코드 검증 수행.
+  - Track A(유효 ISBN) vs Track B(ISBN 결측) 범위 분리, 서지 검증 생략 여부, `dataSource` 직렬화 및 장르 매핑 무결성 확정.
+- **수행 내용**:
+  1. **Phase A (읽기 전용 교차 코드 리뷰)**:
+     - 코어 서버 동결 유지: `BookSearchItem.isbn: str` 필수 계약 및 `_parse_volume`의 ISBN 결측 도서 Drop 일관성 확인.
+     - 에이전트 연동 계약 확인: `dataSource: "GOOGLE"` 파싱, 서지 검증 통과 시에만 조기 반환(`is_valid == True`), Google Books `categories` 미제공에 따른 제목/설명 영문 키워드 매핑 안전망 확인.
+  2. **Phase B (최소 보정)**:
+     - 코어 서버 코드 변경 0건 (완전 동결) 및 에이전트 연계 계약 보존.
+  3. **Phase C & D (3-Tier 검증 및 최종 게이트 판정)**:
+     - 본 레포 281개 단위 테스트 100% 그린(23.18s), Ruff/Mypy/Harness 무결점 통과.
+     - 최종 판정: `PASS WITH CONDITIONS` (유효 ISBN 도서 기준 프론트엔드 연동 진행 가능).
+  4. **프론트엔드 E2E 실환경 상호작용 검증**:
+     - 사서 추천 요청 $\to$ SSE 실시간 스트리밍 카드 수신 $\to$ [내 서재 등록] 클릭 $\to$ 회원 서재 영속화 E2E 파이프라인 실환경 정상 작동 최종 확인.
+     - Cloud Run에 `GOOGLE_BOOKS_API_KEY` 부재 시에도 500 에러 없이 국립도서관 데이터로 안전 폴백(Graceful Fallback)되는 무중단 안전망 실증.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Google Cloud Run 환경변수 등록**:
+     - Cloud Run 콘솔에 `GOOGLE_BOOKS_API_KEY` 환경변수 주입 후 라이브 원서 표지/메타데이터 연동 점검.
+  2. **Google Books 원본 categories 직렬화 후속 과제 (Phase 63 2단계)**:
+     - Core API `BookSearchItem.subject`로 `categories` 매핑 및 AI 서비스 1순위 매핑 활성화 지원.
+
 ## 2026-10-23: 책장 선반(Shelf Placement) 배치 일괄 동기화 API 구축 (Phase 62)
 - **배경**:
   - 프론트엔드가 3D 책장의 단/층(0, 1, 2단...) 드래그 앤 드롭 배치를 브라우저 `localStorage`로만 임시 관리하고 있어, 새로고침이나 기기 변경 시 배치가 도서 등록순으로 원상 복구되는 한계 해소.
@@ -93,60 +141,3 @@
      - 실환경 R2 업로드 동작 모니터링 및 API 인터페이스 규격 지원.
   2. **상용화 대비 보안 및 운영 체계 점검**:
      - 보안 응답 헤더 미들웨어 및 환경설정 점검.
-
-## 2026-10-20: Cloudflare R2 문장 수집(Scrap) 이미지 Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 59)
-- **배경**:
-  - 문장 수집 스크랩 시 이미지 바이너리가 백엔드 메모리/대역폭을 거치지 않도록 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
-  - 가짜/타인 객체 키 도용, 미업로드 객체 등록, 5MB 용량 초과, 비이미지 위조 파일 등록을 원천 차단하고 스크랩 수정/삭제 시 미사용 R2 이미지 안전 정리(Clean-up) 구현.
-- **수행 내용**:
-  1. **DTO 정의 (`app/schemas/scrap.py`)**:
-     - `ScrapImagePresignedUrlRequest` (`contentType: str = "image/webp"`), `ScrapImagePresignedUrlResponse` (`presignedUrl`, `imageUrl`, `expiresIn=600`).
-  2. **범용 스토리지 서비스 확장 (`app/services/storage_service.py`)**:
-     - `generate_scrap_image_presigned_url`: `quote/{env}/{member_id}_{timestamp}_{uuid8}.{ext}` 키 발급 및 서명 파라미터 로깅 마스킹.
-     - `verify_uploaded_scrap_image`: R2 CDN URL에 대해 소유권(`member_id_`), R2 실제 객체(`head_object`), 5MB 상한, MIME 타입, 16바이트 매직 바이트 검증 및 위조 객체 자동 삭제(`_safe_delete_object`).
-     - Base64 Data URL 및 외부 이미지 URL에 대한 100% 하위 호환성 보장.
-     - `delete_image_if_exists`: 프로필/스크랩 공용 미사용 객체 안전 삭제 연동.
-  3. **엔드포인트 신설 및 비즈니스 로직 연동 (`app/routers/scraps.py`, `app/services/scrap_service.py`)**:
-     - `POST /api/v1/library/scraps/presigned-url` 엔드포인트 신설 (게스트/데모 403 차단 가드).
-     - `create_scrap`: R2 CDN URL 검증 후 DB 영속화.
-     - `update_scrap`: 신규 이미지 검증 및 DB 커밋 완료 후 이전 이미지 R2 정리.
-     - `delete_scrap`: 스크랩 삭제 시 소속된 R2 이미지 안전 정리.
-  4. **3-Tier 품질 검증 통과**:
-     - `tests/test_storage.py`에 스크랩 Presigned URL, 무결성 검증, 위조 차단, E2E 라이프사이클 테스트 16종 신설 (총 39종 전수 통과).
-     - 전체 217개 단위 테스트 100% 그린 (22.12s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
-- **다음 세션에서 이어 진행할 작업**:
-  1. **Phase 59 PR 생성 및 develop 머지 지원**:
-     - 로컬 커밋 및 PR 생성, CI 통과 확인.
-  2. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
-     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
-
-## 2026-10-19: Cloudflare R2 Presigned URL 다이렉트 업로드 파이프라인 구축 & 프로필 사진 연동 (Phase 58)
-- **배경**:
-  - 사용자 프로필 사진 업로드 시 백엔드 서버 부하(대역폭 및 CPU/RAM)를 $0로 차단하기 위해 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
-  - 가짜/타인 객체 키 등록, 미업로드 객체 등록, 용량 초과 등 스토리지 무결성 침해를 원천 방어하고 이전 커스텀 이미지 자동 정리(Clean-up) 구현.
-- **수행 내용**:
-  1. **의존성 및 환경설정 구축 (`pyproject.toml`, `requirements.txt`, `app/config.py`, `.env.example`)**:
-     - `boto3>=1.34.0` 의존성 추가 및 `requirements.txt` 도커 빌드 파일 동기화 완료 (PR #45, #46).
-     - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`("dpyb-public"), `R2_PUBLIC_URL_PREFIX`("https://cdn.ai0208.xyz"), `R2_ENV_PREFIX`("beta") 환경변수 구성.
-  2. **범용 스토리지 서비스 구현 (`app/services/storage_service.py`)**:
-     - `StorageService`: boto3 S3 클라이언트 팩토리, 4대 MIME 타입(WebP, PNG, JPEG, GIF) 매핑 및 5MB 상한 검증.
-     - 고유 객체 키 생성 규칙: `{category}/{env}/{member_id}_{timestamp}_{uuid8}.{ext}`.
-     - 600초 유효기간 Presigned PUT URL 생성 및 로그 시 서명 쿼리스트링 마스킹.
-     - `verify_uploaded_profile_image`: R2 CDN URL에 대해 본인 키 소유권 및 실제 객체 존재 여부(`head_object`), 16바이트 매직 넘버 검사 및 불량 객체 자동 삭제.
-     - `delete_image_if_exists`: DB 커밋 완료 후 이전 커스텀 이미지 안전 삭제 연동.
-  3. **DTO 및 엔드포인트 신설 (`app/schemas/member.py`, `app/routers/users.py`, `app/services/member_service.py`)**:
-     - `ProfileImagePresignedUrlRequest`, `ProfileImagePresignedUrlResponse` Pydantic DTO 추가.
-     - `POST /api/v1/users/me/profile-image/presigned-url` 및 별칭 엔드포인트 신설 (게스트/데모 계정 차단).
-     - `PATCH /api/v1/users/me`: `MemberService.update_profile` 내 무결성 검증 및 이전 이미지 정리 통합.
-  4. **3-Tier 품질 검증 통과**:
-     - `tests/test_storage.py` 신설: Mock S3 기반 단위 테스트, 키/MIME 매핑, 인증/인가/용량초과/미존재 가드, E2E 갱신 23종 전수 통과.
-     - 전체 201개 단위 테스트 100% 그린 (21.73s), Ruff 포맷/린트 및 Mypy 타입 체크 무결점.
-- **다음 세션에서 이어 진행할 작업**:
-  1. **Phase 59: 문장 수집(Scrap) 이미지 Presigned URL 파이프라인 및 무결성 검증 구축**:
-     - `POST /api/v1/library/scraps/presigned-url` 엔드포인트 신설 (`ScrapImagePresignedUrlRequest/Response` DTO)
-     - `StorageService.generate_scrap_image_presigned_url`: `quote/beta/{member_id}_{timestamp}_{uuid}.{ext}` Presigned PUT URL 발급
-     - `StorageService.verify_uploaded_scrap_image`: 소유권, R2 객체 존재 여부, 5MB 상한, 16바이트 매직 넘버 검증 및 위조 파일 자동 삭제
-     - `create_scrap` & `update_scrap` 연동 및 DB 커밋 후 이전 이미지 정리
-     - 단위/통합 테스트 작성 (201개 단위 테스트 100% 그린 유지) 및 PR 생성
-  2. **Cloud Run 배포 및 R2 실환경 모니터링**:
-     - PR #46 머지 후 Cloud Run 자동 빌드 배포 성공 확인 및 프론트엔드 연동 지원.

@@ -28,7 +28,9 @@ backend-core-api/
 │   │   ├── exceptions.py       # 18종 표준 App Exception 및 Global Exception Handler
 │   │   ├── security.py         # 자체 JWT 발급/갱신(HS256) 및 Bearer 토큰 member_id(UUID) 검증
 │   │   ├── shelf_rank.py       # 62진수 LexoRank 순서 정렬 및 rebalance 알고리즘
-│   │   └── kdc_mapper.py       # KDC 대분류 변환 및 한글 장르 라벨 매퍼
+│   │   ├── kdc_mapper.py       # 순수 KDC(한국십진분류법 제6판) 대분류 및 표준 주제어 매퍼
+│   │   ├── ddc_mapper.py       # 순수 DDC(듀이십진분류법 제23판) 대분류 매퍼
+│   │   └── genre_mapper.py     # 통합 장르 오케스트레이터 및 경량 키워드 Fallback 매퍼
 │   ├── db/
 │   │   ├── base.py             # Base DeclarativeBase, BigIntPK (SQLite 호환)
 │   │   └── session.py          # asyncpg 엔진(statement_cache_size=0) 및 get_db 의존성

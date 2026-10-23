@@ -51,7 +51,7 @@ async def test_classify_genre_timeout_fallback(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_timeout)
 
-    # 513.8은 KDC 매퍼 상 PHILOSOPHY(철학/심리치료)로 승격되는 코드
+    # 순수 KDC 제6판 기준 500번대는 TECHNOLOGY(기술과학/의학)로 정직하게 폴백
     result = await client.classify_genre(
         title="그림의 힘",
         author="김선현",
@@ -59,7 +59,7 @@ async def test_classify_genre_timeout_fallback(monkeypatch: pytest.MonkeyPatch):
         isbn="9788950958749",
     )
 
-    assert result.genre == GenreType.PHILOSOPHY
+    assert result.genre == GenreType.TECHNOLOGY
     assert result.source == "KDC_FALLBACK"
     assert result.confidence is None
     assert "timed out" in (result.reason or "")

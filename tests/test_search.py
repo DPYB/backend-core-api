@@ -56,8 +56,10 @@ async def test_search_already_registered_book(
     assert data["libraryBook"] is not None
     assert data["libraryBook"]["title"] == "클린 코드"
     assert data["libraryBook"]["genre"] == "TECHNOLOGY"
-    assert data["libraryBook"]["genreName"] == "컴퓨터 프로그래밍"  # Subject 1순위 노출
-    assert data["libraryBook"]["displayGenre"] == "컴퓨터 프로그래밍"
+    assert data["libraryBook"]["genreName"] == "기술과학"  # 대분류 본연의 명칭 보존
+    assert (
+        data["libraryBook"]["displayGenre"] == "컴퓨터 프로그래밍"
+    )  # 세부 주제 1순위 노출
     assert data["libraryBook"]["progress"] == 20.5
 
 
@@ -85,8 +87,10 @@ async def test_search_unregistered_book_found(client: AsyncClient):
         assert data["libraryBook"] is None
         assert data["book"] is not None
         assert data["book"]["title"] == "리팩터링 2판"
-        assert data["book"]["genreName"] == "소프트웨어 리팩터링"  # Subject 1순위 노출
-        assert data["book"]["displayGenre"] == "소프트웨어 리팩터링"
+        assert data["book"]["genreName"] == "기술과학"  # 대분류 본연의 명칭 보존
+        assert (
+            data["book"]["displayGenre"] == "소프트웨어 리팩터링"
+        )  # 세부 주제 1순위 노출
 
 
 @pytest.mark.asyncio
@@ -269,7 +273,7 @@ async def test_national_library_kyobo_cdn_fallback():
         assert book.subject == "SF/과학소설"
         assert book.display_genre == "SF/과학소설"
         assert book.genre == GenreType.LITERATURE
-        assert book.genre_name == "SF/과학소설"  # Subject 1순위 노출
+        assert book.genre_name == "문학"  # 대분류 본연의 명칭 보존
 
 
 @pytest.mark.asyncio
@@ -382,8 +386,8 @@ async def test_national_library_martian_sf_override():
         assert book is not None
         assert book.title == "마션 (어느 외톨이 우주인의 화성 생존기)"
         assert book.genre == GenreType.LITERATURE
-        assert book.subject == "SF/과학소설"
-        assert book.display_genre == "SF/과학소설"
+        assert book.subject == "영미소설"  # 공식 KDC 843 정직한 매핑
+        assert book.display_genre == "영미소설"
 
 
 @pytest.mark.asyncio

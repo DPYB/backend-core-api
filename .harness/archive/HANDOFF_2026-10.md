@@ -215,3 +215,61 @@
      - 로컬 커밋 상태 점검 후 PR 생성 및 CI 통과 확인.
   2. **Google Cloud Run 배포 마이그레이션**:
      - `YES_24_API_KEY` 실환경 환경변수 주입 및 컨테이너 기동 검증.
+
+
+## 2026-10-19: Cloudflare R2 Presigned URL 다이렉트 업로드 파이프라인 구축 & 프로필 사진 연동 (Phase 58)
+- **배경**:
+  - 사용자 프로필 사진 업로드 시 백엔드 서버 부하(대역폭 및 CPU/RAM)를 $0로 차단하기 위해 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
+  - 가짜/타인 객체 키 등록, 미업로드 객체 등록, 용량 초과 등 스토리지 무결성 침해를 원천 방어하고 이전 커스텀 이미지 자동 정리(Clean-up) 구현.
+- **수행 내용**:
+  1. **의존성 및 환경설정 구축 (`pyproject.toml`, `requirements.txt`, `app/config.py`, `.env.example`)**:
+     - `boto3>=1.34.0` 의존성 추가 및 `requirements.txt` 도커 빌드 파일 동기화 완료 (PR #45, #46).
+     - `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`("dpyb-public"), `R2_PUBLIC_URL_PREFIX`("https://cdn.ai0208.xyz"), `R2_ENV_PREFIX`("beta") 환경변수 구성.
+  2. **범용 스토리지 서비스 구현 (`app/services/storage_service.py`)**:
+     - `StorageService`: boto3 S3 클라이언트 팩토리, 4대 MIME 타입(WebP, PNG, JPEG, GIF) 매핑 및 5MB 상한 검증.
+     - 고유 객체 키 생성 규칙: `{category}/{env}/{member_id}_{timestamp}_{uuid8}.{ext}`.
+     - 600초 유효기간 Presigned PUT URL 생성 및 로그 시 서명 쿼리스트링 마스킹.
+     - `verify_uploaded_profile_image`: R2 CDN URL에 대해 본인 키 소유권 및 실제 객체 존재 여부(`head_object`), 16바이트 매직 넘버 검사 및 불량 객체 자동 삭제.
+     - `delete_image_if_exists`: DB 커밋 완료 후 이전 커스텀 이미지 안전 삭제 연동.
+  3. **DTO 및 엔드포인트 신설 (`app/schemas/member.py`, `app/routers/users.py`, `app/services/member_service.py`)**:
+     - `ProfileImagePresignedUrlRequest`, `ProfileImagePresignedUrlResponse` Pydantic DTO 추가.
+     - `POST /api/v1/users/me/profile-image/presigned-url` 및 별칭 엔드포인트 신설 (게스트/데모 계정 차단).
+     - `PATCH /api/v1/users/me`: `MemberService.update_profile` 내 무결성 검증 및 이전 이미지 정리 통합.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_storage.py` 신설: Mock S3 기반 단위 테스트, 키/MIME 매핑, 인증/인가/용량초과/미존재 가드, E2E 갱신 23종 전수 통과.
+     - 전체 201개 단위 테스트 100% 그린 (21.73s), Ruff 포맷/린트 및 Mypy 타입 체크 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 59: 문장 수집(Scrap) 이미지 Presigned URL 파이프라인 및 무결성 검증 구축**:
+     - `POST /api/v1/library/scraps/presigned-url` 엔드포인트 신설 (`ScrapImagePresignedUrlRequest/Response` DTO)
+     - `StorageService.generate_scrap_image_presigned_url`: `quote/beta/{member_id}_{timestamp}_{uuid}.{ext}` Presigned PUT URL 발급
+     - `StorageService.verify_uploaded_scrap_image`: 소유권, R2 객체 존재 여부, 5MB 상한, 16바이트 매직 넘버 검증 및 위조 파일 자동 삭제
+     - `create_scrap` & `update_scrap` 연동 및 DB 커밋 후 이전 이미지 정리
+     - 단위/통합 테스트 작성 (201개 단위 테스트 100% 그린 유지) 및 PR 생성
+  2. **Cloud Run 배포 및 R2 실환경 모니터링**:
+     - PR #46 머지 후 Cloud Run 자동 빌드 배포 성공 확인 및 프론트엔드 연동 지원.
+
+## 2026-10-20: Cloudflare R2 문장 수집(Scrap) 이미지 Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 59)
+- **배경**:
+  - 문장 수집 스크랩 시 이미지 바이너리가 백엔드 메모리/대역폭을 거치지 않도록 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
+  - 가짜/타인 객체 키 도용, 미업로드 객체 등록, 5MB 용량 초과, 비이미지 위조 파일 등록을 원천 차단하고 스크랩 수정/삭제 시 미사용 R2 이미지 안전 정리(Clean-up) 구현.
+- **수행 내용**:
+  1. **DTO 정의 (`app/schemas/scrap.py`)**:
+     - `ScrapImagePresignedUrlRequest` (`contentType: str = "image/webp"`), `ScrapImagePresignedUrlResponse` (`presignedUrl`, `imageUrl`, `expiresIn=600`).
+  2. **범용 스토리지 서비스 확장 (`app/services/storage_service.py`)**:
+     - `generate_scrap_image_presigned_url`: `quote/{env}/{member_id}_{timestamp}_{uuid8}.{ext}` 키 발급 및 서명 파라미터 로깅 마스킹.
+     - `verify_uploaded_scrap_image`: R2 CDN URL에 대해 소유권(`member_id_`), R2 실제 객체(`head_object`), 5MB 상한, MIME 타입, 16바이트 매직 바이트 검증 및 위조 객체 자동 삭제(`_safe_delete_object`).
+     - Base64 Data URL 및 외부 이미지 URL에 대한 100% 하위 호환성 보장.
+     - `delete_image_if_exists`: 프로필/스크랩 공용 미사용 객체 안전 삭제 연동.
+  3. **엔드포인트 신설 및 비즈니스 로직 연동 (`app/routers/scraps.py`, `app/services/scrap_service.py`)**:
+     - `POST /api/v1/library/scraps/presigned-url` 엔드포인트 신설 (게스트/데모 403 차단 가드).
+     - `create_scrap`: R2 CDN URL 검증 후 DB 영속화.
+     - `update_scrap`: 신규 이미지 검증 및 DB 커밋 완료 후 이전 이미지 R2 정리.
+     - `delete_scrap`: 스크랩 삭제 시 소속된 R2 이미지 안전 정리.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_storage.py`에 스크랩 Presigned URL, 무결성 검증, 위조 차단, E2E 라이프사이클 테스트 16종 신설 (총 39종 전수 통과).
+     - 전체 217개 단위 테스트 100% 그린 (22.12s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 59 PR 생성 및 develop 머지 지원**:
+     - 로컬 커밋 및 PR 생성, CI 통과 확인.
+  2. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
+     - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
