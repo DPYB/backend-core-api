@@ -32,6 +32,8 @@ from app.schemas.library_book import (
     LibraryBookItemResponse,
     MoveBookShelfResponse,
     ReorderBookResponse,
+    ShelfPlacementsResponse,
+    ShelfPlacementsUpdateRequest,
     UpdateLibraryBookRequest,
     UpdateLibraryBookResponse,
     UpdateProgressResponse,
@@ -269,6 +271,8 @@ class BookService:
             book_id=book.id,
             shelf_id=book.shelf_id,
             shelf_rank=book.shelf_rank,
+            shelf_tier=book.shelf_tier,
+            shelf_order=book.shelf_order,
             title=book.title,
             author=book.author,
             isbn=book.isbn,
@@ -327,7 +331,14 @@ class BookService:
                 raise InvalidFilterParameterException("올바르지 않은 장르 필터입니다.")
 
         # 정렬 파라미터 검증
-        valid_sort_by = {"SHELF_ORDER", "TITLE", "AUTHOR", "CREATED_AT", "PROGRESS"}
+        valid_sort_by = {
+            "SHELF_ORDER",
+            "SHELF_PLACEMENT",
+            "TITLE",
+            "AUTHOR",
+            "CREATED_AT",
+            "PROGRESS",
+        }
         valid_sort_order = {"ASC", "DESC"}
         if sort_by not in valid_sort_by:
             raise InvalidFilterParameterException(f"유효하지 않은 sortBy: {sort_by}")
@@ -346,6 +357,23 @@ class BookService:
                 else LibraryBook.shelf_rank.asc()
             )
             query = query.order_by(sort_expr)
+        elif sort_by == "SHELF_PLACEMENT":
+            tier_expr = (
+                LibraryBook.shelf_tier.desc()
+                if is_desc
+                else LibraryBook.shelf_tier.asc()
+            )
+            order_expr = (
+                LibraryBook.shelf_order.desc()
+                if is_desc
+                else LibraryBook.shelf_order.asc()
+            )
+            rank_expr = (
+                LibraryBook.shelf_rank.desc()
+                if is_desc
+                else LibraryBook.shelf_rank.asc()
+            )
+            query = query.order_by(tier_expr, order_expr, rank_expr)
         elif sort_by == "TITLE":
             sort_expr = LibraryBook.title.desc() if is_desc else LibraryBook.title.asc()
             query = query.order_by(sort_expr)
@@ -391,6 +419,8 @@ class BookService:
                 book_id=b.id,
                 shelf_id=b.shelf_id,
                 shelf_rank=b.shelf_rank,
+                shelf_tier=b.shelf_tier,
+                shelf_order=b.shelf_order,
                 title=b.title,
                 author=b.author,
                 isbn=b.isbn,
@@ -441,6 +471,8 @@ class BookService:
             book_id=book.id,
             shelf_id=book.shelf_id,
             shelf_rank=book.shelf_rank,
+            shelf_tier=book.shelf_tier,
+            shelf_order=book.shelf_order,
             title=book.title,
             author=book.author,
             isbn=book.isbn,
@@ -481,6 +513,8 @@ class BookService:
             book_id=book.id,
             shelf_id=book.shelf_id,
             shelf_rank=book.shelf_rank,
+            shelf_tier=book.shelf_tier,
+            shelf_order=book.shelf_order,
             title=book.title,
             author=book.author,
             isbn=book.isbn,
@@ -591,6 +625,8 @@ class BookService:
             book_id=book.id,
             shelf_id=book.shelf_id,
             shelf_rank=book.shelf_rank,
+            shelf_tier=book.shelf_tier,
+            shelf_order=book.shelf_order,
             title=book.title,
             author=book.author,
             isbn=book.isbn,
@@ -891,3 +927,66 @@ class BookService:
             completed_at=book.completed_at,
             updated_at=book.updated_at,
         )
+
+    @staticmethod
+    async def update_shelf_placements(
+        db: AsyncSession,
+        member_id: uuid.UUID,
+        request: ShelfPlacementsUpdateRequest,
+    ) -> ShelfPlacementsResponse:
+        """선반별 도서 단(shelf_tier) 및 순서(shelf_order)를 일괄 업데이트합니다.
+
+        요청에 포함된 모든 도서의 소유권을 단일 트랜잭션 내에서 사전 검증하며,
+        타인의 도서가 하나라도 포함된 경우 403 Forbidden (LibraryBookAccessDeniedException),
+        존재하지 않거나 삭제된 도서가 포함된 경우 404 Not Found (LibraryBookNotFoundException),
+        요청 내 동일 도서 ID 중복 지정 시 400 Bad Request (InvalidReorderTargetException)를 발생시킵니다.
+        """
+        all_book_ids: list[int] = []
+        for _tier_key, book_ids in request.assignments.items():
+            all_book_ids.extend(book_ids)
+
+        if not all_book_ids:
+            return ShelfPlacementsResponse(status="success", updated_count=0)
+
+        # 1. 중복 도서 ID 검사
+        unique_book_ids = set(all_book_ids)
+        if len(unique_book_ids) != len(all_book_ids):
+            raise InvalidReorderTargetException(
+                "동일한 도서 ID가 여러 선반 또는 위치에 중복 지정될 수 없습니다."
+            )
+
+        # 2. 모든 도서의 DB 조회 및 소유권/존재 여부 검증
+        stmt = select(LibraryBook).where(
+            LibraryBook.id.in_(unique_book_ids),
+            LibraryBook.deleted_at.is_(None),
+        )
+        books = (await db.execute(stmt)).scalars().all()
+        book_map = {b.id: b for b in books}
+
+        # 누락된 도서 검사
+        missing_ids = unique_book_ids - set(book_map.keys())
+        if missing_ids:
+            raise LibraryBookNotFoundException(
+                f"도서를 찾을 수 없습니다: {sorted(missing_ids)}"
+            )
+
+        # 타인 도서 소유권 검사
+        for book in books:
+            if book.member_id != member_id:
+                raise LibraryBookAccessDeniedException(
+                    "해당 도서에 대한 접근 권한이 없습니다."
+                )
+
+        # 3. 선반 단(shelf_tier) 및 단 내 순서(shelf_order) 일괄 업데이트
+        updated_count = 0
+        for tier_key, book_ids in request.assignments.items():
+            tier_idx = int(tier_key)
+            for order_idx, book_id in enumerate(book_ids):
+                book = book_map[book_id]
+                if book.shelf_tier != tier_idx or book.shelf_order != order_idx:
+                    book.shelf_tier = tier_idx
+                    book.shelf_order = order_idx
+                    updated_count += 1
+
+        await db.commit()
+        return ShelfPlacementsResponse(status="success", updated_count=updated_count)

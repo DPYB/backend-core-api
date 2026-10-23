@@ -9,7 +9,7 @@ from app.core.kdc_mapper import (
     parse_to_date,
     parse_to_genre_and_subject,
 )
-from app.models.enums import BookReadingStatus, GenreType
+from app.models.enums import BookReadingStatus, GenreType, LibrarianType
 from app.schemas.common import CamelModel, PaginatedResponse
 
 ALLOWED_GENRE_SOURCES: set[str] = {"KDC", "LLM", "KDC_FALLBACK", "USER"}
@@ -120,6 +120,8 @@ class CreateLibraryBookResponse(CamelModel):
     book_id: int
     shelf_id: int
     shelf_rank: str
+    shelf_tier: int = 0
+    shelf_order: int = 0
     title: str
     author: str
     isbn: str | None = None
@@ -164,6 +166,8 @@ class LibraryBookItemResponse(CamelModel):
     book_id: int
     shelf_id: int
     shelf_rank: str
+    shelf_tier: int = 0
+    shelf_order: int = 0
     title: str
     author: str
     isbn: str | None = None
@@ -215,6 +219,8 @@ class LibraryBookDetailResponse(CamelModel):
     book_id: int
     shelf_id: int
     shelf_rank: str
+    shelf_tier: int = 0
+    shelf_order: int = 0
     title: str
     author: str
     isbn: str | None = None
@@ -320,6 +326,8 @@ class UpdateLibraryBookResponse(CamelModel):
     book_id: int
     shelf_id: int
     shelf_rank: str
+    shelf_tier: int = 0
+    shelf_order: int = 0
     title: str
     author: str
     isbn: str | None = None
@@ -402,3 +410,54 @@ class UpdateProgressResponse(CamelModel):
     reading_status: BookReadingStatus
     completed_at: datetime | None = None
     updated_at: datetime
+
+
+class ShelfPlacementsUpdateRequest(CamelModel):
+    """선반별 도서 단/순서 일괄 업데이트 요청"""
+
+    librarian_type: LibrarianType | None = Field(
+        None, description="사서 타입 (선택 사항)"
+    )
+    assignments: dict[str, list[int]] = Field(
+        ...,
+        description="선반 단(키: 문자열 '0', '1' 등)별 도서 ID 목록 매핑",
+    )
+
+    @field_validator("assignments", mode="before")
+    @classmethod
+    def validate_assignments(cls, v: object) -> dict[str, list[int]]:
+        if not isinstance(v, dict):
+            raise ValueError("assignments는 객체(dict) 형태여야 합니다.")
+        normalized: dict[str, list[int]] = {}
+        for k, ids in v.items():
+            str_key = str(k).strip()
+            try:
+                tier_idx = int(str_key)
+                if tier_idx < 0:
+                    raise ValueError(f"선반 단 번호는 0 이상이어야 합니다: {k}")
+            except (ValueError, TypeError) as e:
+                raise ValueError(
+                    f"선반 단 번호가 유효한 0 이상의 정수가 아닙니다: {k}"
+                ) from e
+            if not isinstance(ids, list):
+                raise ValueError(f"선반 {k}의 도서 목록은 배열이어야 합니다.")
+            converted_ids: list[int] = []
+            for bid in ids:
+                try:
+                    int_bid = int(bid)
+                    if int_bid <= 0:
+                        raise ValueError(f"유효한 도서 ID(양의 정수)여야 합니다: {bid}")
+                    converted_ids.append(int_bid)
+                except (ValueError, TypeError) as e:
+                    raise ValueError(
+                        f"유효한 도서 ID(양의 정수)여야 합니다: {bid}"
+                    ) from e
+            normalized[str_key] = converted_ids
+        return normalized
+
+
+class ShelfPlacementsResponse(CamelModel):
+    """선반별 도서 단/순서 일괄 업데이트 응답"""
+
+    status: str = Field(default="success", description="처리 상태")
+    updated_count: int = Field(..., description="배치가 갱신된 도서 건수")

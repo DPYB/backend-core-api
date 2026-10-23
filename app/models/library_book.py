@@ -48,6 +48,12 @@ class LibraryBook(Base):
             postgresql_where=text("isbn IS NOT NULL AND deleted_at IS NULL"),
             sqlite_where=text("isbn IS NOT NULL AND deleted_at IS NULL"),
         ),
+        Index(
+            "ix_library_book_member_shelf_placement",
+            "member_id",
+            "shelf_tier",
+            "shelf_order",
+        ),
         {"schema": "core"},
     )
 
@@ -57,6 +63,12 @@ class LibraryBook(Base):
         BigInteger, ForeignKey("core.shelf.id", ondelete="RESTRICT"), nullable=False
     )
     shelf_rank: Mapped[str] = mapped_column(String(128), nullable=False)
+    shelf_tier: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    shelf_order: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     author: Mapped[str] = mapped_column(String(100), nullable=False)
     isbn: Mapped[str | None] = mapped_column(String(13), nullable=True)

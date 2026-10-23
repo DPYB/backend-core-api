@@ -22,6 +22,8 @@ from app.schemas.library_book import (
     MoveBookShelfResponse,
     ReorderBookRequest,
     ReorderBookResponse,
+    ShelfPlacementsResponse,
+    ShelfPlacementsUpdateRequest,
     UpdateLibraryBookRequest,
     UpdateLibraryBookResponse,
     UpdateProgressRequest,
@@ -101,6 +103,24 @@ async def list_books(
         sort_order=sort_order,
         page=page,
         size=size,
+    )
+
+
+@router.put("/shelf-placements", response_model=ShelfPlacementsResponse)
+async def update_shelf_placements(
+    request: ShelfPlacementsUpdateRequest,
+    member_id: uuid.UUID = Depends(get_current_member_id),
+    db: AsyncSession = Depends(get_db),
+) -> ShelfPlacementsResponse:
+    """
+    선반별 도서 단/순서 일괄 업데이트
+    - 3D 서재 드래그 앤 드롭 완료 시 도서의 선반 단(shelf_tier)과 단 내 순서(shelf_order)를 일괄 영속화합니다.
+    - 단일 격리 트랜잭션 내에서 회원 소유권을 일괄 검증하며 타인 도서 조작 시 403 Forbidden으로 차단합니다.
+    """
+    return await BookService.update_shelf_placements(
+        db=db,
+        member_id=member_id,
+        request=request,
     )
 
 
