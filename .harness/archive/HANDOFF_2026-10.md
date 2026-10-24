@@ -273,3 +273,31 @@
      - 로컬 커밋 및 PR 생성, CI 통과 확인.
   2. **Google Cloud Run 배포 마이그레이션 & 운영 검증**:
      - Cloud Run 배포 가이드 및 워크플로우 구성, `YES_24_API_KEY` 환경변수 주입 검증.
+
+## 2026-10-20: Cloudflare R2 도서 커스텀 표지(frontcover) Presigned URL 파이프라인 및 무결성 검증 구축 (Phase 60)
+- **배경**:
+  - 도서 직접 등록(독립 출판물, 절판 도서, 표지 부재 도서, 실물 책 직접 촬영) 및 개인화 커스텀 표지 업로드를 위해 Cloudflare R2 버킷(`dpyb-public`) 다이렉트 Presigned PUT URL 파이프라인 구축.
+  - 가짜/타인 객체 키 도용, 미업로드 객체 등록, 5MB 용량 초과, 비이미지 위조 파일 등록을 원천 차단하고 표지 변경 및 도서 삭제 시 미사용 R2 이미지 안전 정리(Clean-up) 구현.
+- **수행 내용**:
+  1. **DTO 정의 (`app/schemas/library_book.py`)**:
+     - `BookCoverPresignedUrlRequest` (`contentType: str = "image/webp"`).
+     - `BookCoverPresignedUrlResponse`: `status="success"`, `data: {uploadUrl, publicUrl, key}` 및 기존 DTO 듀얼 필드(`presignedUrl`, `imageUrl`, `expiresIn=600`) 직렬화 지원.
+  2. **범용 스토리지 서비스 확장 (`app/services/storage_service.py`)**:
+     - `generate_book_cover_presigned_url`: `frontcover/{env}/{uuid}.{ext}` 키 발급 및 서명 쿼리스트링 로깅 마스킹.
+     - `verify_uploaded_book_cover`: R2 CDN URL에 대해 frontcover 경로, R2 실제 객체 존재 여부(`head_object`), 5MB 상한, Content-Type, 16바이트 매직 넘버 검증 및 위조 파일 자동 삭제.
+     - `delete_image_if_exists`: 프로필/스크랩/도서 커스텀 표지 공용 미사용 객체 안전 삭제 연동.
+  3. **공인 표지 호스트 등록 및 도서 서비스 연동 (`app/services/national_library.py`, `app/routers/books.py`, `app/services/book_service.py`)**:
+     - `ALLOWED_COVER_HOSTS`에 R2 CDN 도메인(`cdn.ai0208.xyz`) 등록.
+     - `POST /api/v1/library/books/cover/presigned-url` 엔드포인트 신설 (게스트/데모 403 차단).
+     - `create_book`: 커스텀 R2 표지 무결성 검증 후 DB 저장.
+     - `update_book`: 신규 표지 검증 및 DB 커밋 성공 후 이전 커스텀 표지 자동 삭제.
+     - `delete_book`: 도서 삭제 시 소속된 커스텀 표지 안전 정리.
+  4. **3-Tier 품질 검증 통과**:
+     - `tests/test_storage.py`에 도서 표지 Presigned URL, 무결성 검증, 위조 차단, 도서 라이프사이클 14종 신규 테스트 작성 (총 53종 전수 통과).
+     - 전체 231개 단위 테스트 100% 그린 (20.22s), Ruff 포맷/린트 및 Mypy 정적 타입 체크 100% 무결점.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **3대 이미지(프로필, 스크랩, 도서 표지) Presigned URL 연동 모니터링**:
+     - 실환경 R2 업로드 동작 모니터링 및 API 인터페이스 규격 지원.
+  2. **상용화 대비 보안 및 운영 체계 점검**:
+     - 보안 응답 헤더 미들웨어 및 환경설정 점검.
+
