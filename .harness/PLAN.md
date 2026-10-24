@@ -6,20 +6,13 @@
 ---
 
 ## 1. [보안 P0] Phase 65: 자격증명 보안 강화 (Refresh Token Body 노출 제거 & 쿠키 단일화)
-- [ ] **사전 조사 (완료)**:
-  - 백엔드 DTO 및 직렬화 경로 전수 조사 (`TokenResponse`, `LoginResponse`, `GuestLoginResponse`)
-  - 프론트엔드 클라이언트 사용처 전수 조사 완료: `access_token`만 메모리 적재 중이며, `refreshToken` Body 참조 코드 0건 확인 (쿠키 전용 세션 복원 완비)
-- [ ] **DTO 및 직렬화 정제**:
-  - `TokenResponse`, `LoginResponse`, `GuestLoginResponse` 응답 스키마에서 `refresh_token` 및 `refreshToken` 필드 자체를 완전 제거 (`null` 반환 대신 필드 배제)
-  - `access_token` / `accessToken` 듀얼 필드는 프론트엔드 호환성 검토에 따라 유지/정리
-- [ ] **쿠키 발급 및 세션 수명주기 검증**:
-  - `_set_refresh_cookie`: `SameSite=None; Secure=True; HttpOnly=True` 불변식 보장
-  - `POST /api/v1/auth/logout`: 204 No Content 및 `Max-Age=0` 쿠키 만료 헤더 검증
-- [ ] **8대 회귀 방지 테스트 작성 및 검증**:
-  - 로그인, 갱신, 로그아웃, 쿠키 만료, 위조 토큰, CORS 자격증명 전달 등 전 시나리오 단위/통합 테스트
-- [ ] **4단계 완료 상태 추적**:
-  - [ ] 코드 구현 완료
-  - [ ] 자동 테스트 통과 (기존 299개 + 신규 보안 회귀 테스트 100% 그린)
+- [x] **사전 조사**: 백엔드 DTO 및 프론트엔드 실코드 전수 조사 완료 (Body 사용처 0건 확인)
+- [x] **DTO 및 직렬화 정제**: `TokenResponse`, `LoginResponse`, `GuestLoginResponse` 응답 스키마에서 `refresh_token` 필드 완전 배제 (`access_token` / `accessToken` 듀얼 필드 유지)
+- [x] **쿠키 발급 및 세션 수명주기 보존**: `_set_refresh_cookie` 및 `logout` 쿠키 만료/삭제 불변식 유지
+- [x] **회귀 방지 테스트 검증**: `test_auth_credential_security.py` 7종 작성 및 전체 306개 단위 테스트 100% 그린
+- **4단계 완료 상태 추적**:
+  - [x] 코드 구현 완료
+  - [x] 자동 테스트 통과 (기존 299개 + 신규 보안 회귀 테스트 100% 그린, 306 passed)
   - [ ] 스테이징 검증 완료 (프론트엔드 연동 E2E 확인)
   - [ ] 운영 인프라 확인 완료 (Cloud Run 배포 및 실환경 검증)
 
