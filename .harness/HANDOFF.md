@@ -1,5 +1,27 @@
 # HANDOFF (세션별 서술 로그, append-only)
 
+## 2026-10-25: 자격증명 보안 강화 (Refresh Token Response Body 노출 제거 및 HttpOnly 쿠키 단일화) (Phase 65)
+- **배경**:
+  - `POST /api/v1/auth/login`, `/social/google`, `/social/kakao`, `/refresh`, `/guest` 응답 JSON Body에 평문 `refreshToken`이 노출되어 XSS 공격 표면이 존재하던 취약점 해소.
+  - 프론트엔드 전수 조사 결과 Body 토큰 사용처 0건(HttpOnly 쿠키 전용 갱신 완비) 확인에 따라, 응답 스키마 및 직렬화에서 해당 필드를 완전히 배제(null이 아닌 필드 제거).
+- **수행 내용**:
+  1. **응답 DTO 스키마 정제 (`app/schemas/auth.py`)**:
+     - `TokenResponse`: `refresh_token` 필드 및 `@computed_field refresh_token_snake` 완전 제거.
+     - `GuestLoginResponse`: `refresh_token: str | None` 필드 및 `refresh_token_snake` 완전 제거.
+     - `access_token` 및 `@computed_field access_token_snake`는 API 계약 호환성을 위해 100% 정상 유지.
+  2. **라우터 응답 생성부 정제 (`app/routers/auth.py`)**:
+     - `dev_login`, `google_social_login`, `kakao_social_login`, `refresh_token`, `issue_guest_token`에서 `refresh_token` 매개변수 제거.
+     - `_set_refresh_cookie` 쿠키 발급 및 `POST /auth/logout` 쿠키 만료/삭제(`Max-Age=0`) 로직 100% 온전히 보존.
+  3. **3-Tier 품질 검증 통과**:
+     - `tests/test_auth_credential_security.py` 7종 신규 보안 회귀 테스트 작성 (Body 필드 부재, Access Token 유지, 쿠키 발급/갱신/만료, 예외 응답 비노출 등 전수 통과).
+     - 기존 `tests/test_social_auth_and_members.py` 갱신 통과.
+     - 306개 전체 단위 테스트 100% 그린 (27.23s), Ruff 포맷/린트 및 Mypy 126개 소스 파일 100% 무결점 통과.
+- **다음 세션에서 이어 진행할 작업**:
+  1. **Phase 65 커밋 및 PR 생성 (사용자 컨펌 후 진행)**:
+     - `feat/auth-credential-security` 브랜치 커밋 및 PR 생성.
+  2. **Phase 65-2 로그 노출 점검 또는 Phase 66 Google Books categories 직렬화 착수**:
+     - 사용자 피드백에 맞춰 후속 과제 진행.
+
 ## 2026-10-25: 베타 테스터 가입 버튼 비활성화 및 로그아웃 세션 이슈 분석/해결 지원
 - **배경**:
   - 베타 테스터들의 "회원가입 버튼 비활성화(🚫)" 및 "로그아웃 시 즉시 로그인창으로 안 가고 새로고침해야 풀리며 /refresh 401 발생" 이슈 원인 분석 및 해결.
@@ -18,7 +40,6 @@
      - DTO 정제, 쿠키 수명주기 검증 및 단위/통합 테스트 진행.
   2. **Cloud Run 로그 모니터링 체계 심화 구축**:
      - Discord Webhook 알림 파이프라인 심도 있는 설계 및 구축.
-
 
 ## 2026-10-24: 도서 분류 체계(KDC/DDC/Genre) 물리적 모듈 분리 및 삼각 데이터 계약 정비 (Phase 64)
 - **배경**:
@@ -98,41 +119,3 @@
      - `feat/shelf-placements` 브랜치 PR 생성 및 리뷰 포인트 확인.
   2. **글로벌 도서 API 연동 (Google Books API - Phase 63 마무리 및 PR)**:
      - 대기 중인 Google Books 연동 로직 검증 및 머지.
-
-## 2026-10-22: 상용화 대비 웹 보안 강화 (보안 응답 헤더 미들웨어 및 인증 무차별 대입 Rate Limiting 구축) (Phase 61)
-- **배경**:
-  - 해커톤 프로토타입 단계에서 누락되었던 상용 서비스 수준의 웹 보안 심층 방어(Defense in Depth) 구축.
-  - 로그인(`POST /auth/login`) 및 비밀번호 변경(`POST /auth/password/change`) 엔드포인트의 브루트포스 사전 대입 및 스프레이 공격 방어.
-  - 브라우저 단에서 XSS, 클릭재킹, MIME 스니핑 등을 원천 차단하는 OWASP 권고 5대 표준 보안 헤더 및 API/Swagger 맞춤형 CSP 주입.
-  - `allow_credentials=True` 환경에서 CORS 와일드카드(`*`) 허용으로 인한 W3C 표준 위반 및 자격증명 노출 취약점 해소.
-- **수행 내용**:
-  1. **인증 무차별 대입 Rate Limit 및 초 단위 Retry-After 제공 (`app/core/rate_limit.py`, `app/core/exceptions.py`, `app/routers/auth.py`)**:
-     - `dev_login`: IP당 분당 10회 및 이메일당 분당 5회 슬라이딩 윈도우 한도 적용. 기존 인증과 동일한 정규화(`strip().lower()`)로 대소문자/공백 우회 차단.
-     - `change_password`: IP당 분당 5회 및 회원(`member_id`)당 분당 5회 슬라이딩 윈도우 한도 적용.
-     - 한도 초과 시 429 `RATE_LIMIT_EXCEEDED` 및 잔여 대기 시간 기반 초 단위 `Retry-After: <초>` 응답 헤더 제공.
-  2. **순수 ASGI 보안 응답 헤더 미들웨어 구축 (`app/core/security_headers.py`, `app/main.py`)**:
-     - `SecurityHeadersMiddleware`: BaseHTTPMiddleware 오버헤드 없는 순수 ASGI 미들웨어로 구축.
-     - 5대 표준 헤더: `Strict-Transport-Security: max-age=31536000; includeSubDomains` (preload 제외), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=()`.
-     - CSP 분기 적용: 일반 API 및 `/openapi.json`은 `default-src 'none'; frame-ancestors 'none'`, `/docs` 및 `/redoc`은 Swagger/ReDoc CDN(jsdelivr, Google Fonts 등) 허용 CSP 주입.
-     - 정상 응답뿐 아니라 400, 401, 404, 429, 500 등 오류 응답에도 100% 누락 없이 보안 헤더 주입 보장.
-  3. **CORS 환경변수 기반 명시적 허용 목록 전환 및 와일드카드 정제 (`app/config.py`, `app/main.py`)**:
-     - `app/config.py` 기본값을 명시적 허용 도메인 목록으로 전환.
-     - `allow_credentials=True` 환경에서 와일드카드(`*`)가 포함될 경우 이를 자동 정제하여 안전한 기본 도메인 목록으로 폴백.
-  4. **3-Tier 품질 검증 통과**:
-     - 신규 테스트 3종 12개 작성 (`tests/test_security_headers.py`, `tests/test_auth_rate_limit.py`, `tests/test_cors.py`):
-       - 보안 헤더 및 문서 UI/OpenAPI CSP 격리 검증 (3종)
-       - 로그인/비밀번호 Rate Limit, 이메일 정규화 방어, 제한 독립성, 동시성 검증 (6종)
-       - 허용/비허용 Origin 및 OPTIONS 프리플라이트 처리 검증 (3종)
-     - 전체 243개 단위 테스트 100% 그린 (24.22s), Ruff 포맷/린트 및 Mypy 타입 체크 100% 무결점.
-- **다음 세션에서 이어 진행할 작업 (Phase 62 최우선 착수)**:
-  1. **책장 선반(Shelf Placement) 배치 일괄 동기화 API 구축 (Phase 62)**:
-     - **배경**: 현재 프론트엔드가 책장의 단/층(0, 1, 2단...) 드래그 앤 드롭 배치를 `localStorage`로 임시 보관 중이며, 모바일 ↔ PC 간 선반 배치 동기화를 위해 백엔드 DB 영속화 필요.
-     - **DB 모델 확장 (Alembic 013)**: `core.library_book` 테이블에 선반 단/층(`shelf_tier` 또는 `tier_index`: INT, default 0) 및 선반 내 순서(`shelf_order`: INT, default 0) 컬럼 추가.
-     - **일괄 업데이트 API 엔드포인트 신설**: `PUT /api/v1/library/books/shelf-placements`
-       - DTO: `ShelfPlacementUpdateRequest` (`librarianType: LibrarianType`, `assignments: dict[str, list[int]]`)
-       - 단일 격리 트랜잭션에서 회원 소유권 검증 및 도서들의 `shelf_tier`, `shelf_order` 일괄 갱신.
-     - **단위/통합 테스트 작성**: 선반 배치 변경, 타인 도서 위조 차단, 순서 반영 검증.
-  2. **글로벌 도서 API 연동 (Google Books API)**:
-     - 리서치 문서(`docs/GLOBAL_BOOK_API_DECISION.md`) 기반 2차 작업으로 대기.
-
-

@@ -16,10 +16,9 @@ class SocialLoginRequest(CamelModel):
 
 
 class TokenResponse(CamelModel):
-    """자체 발급 JWT 토큰 응답"""
+    """자체 발급 JWT 토큰 응답 (HttpOnly 쿠키 전용 Refresh Token 체계)"""
 
     access_token: str
-    refresh_token: str
     token_type: str = "Bearer"
     expires_in: int
     member_id: str
@@ -29,11 +28,6 @@ class TokenResponse(CamelModel):
     @property
     def access_token_snake(self) -> str:
         return self.access_token
-
-    @computed_field(alias="refresh_token")  # type: ignore[prop-decorator]
-    @property
-    def refresh_token_snake(self) -> str:
-        return self.refresh_token
 
 
 class LoginRequest(CamelModel):
@@ -86,7 +80,6 @@ class GuestLoginResponse(CamelModel):
     """게스트 토큰 발급 응답"""
 
     access_token: str
-    refresh_token: str | None = None
     token_type: str = "Bearer"
     expires_in: int
     guest_id: str
@@ -99,11 +92,6 @@ class GuestLoginResponse(CamelModel):
     @property
     def access_token_snake(self) -> str:
         return self.access_token
-
-    @computed_field(alias="refresh_token")  # type: ignore[prop-decorator]
-    @property
-    def refresh_token_snake(self) -> str | None:
-        return self.refresh_token
 
 
 class SignupRequest(CamelModel):

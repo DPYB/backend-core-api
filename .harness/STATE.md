@@ -65,6 +65,7 @@
 - [x] **Phase 62 (책장 선반 배치 일괄 동기화 API 구축)**: `core.library_book` 테이블에 `shelf_tier`, `shelf_order` 컬럼 및 `(member_id, shelf_tier, shelf_order)` 인덱스 추가(Alembic `013`), `PUT /api/v1/library/books/shelf-placements` 엔드포인트 신설(단일 트랜잭션 소유권 검증, 중복/타인 도서 방어, 데모/게스트 Allowlist 연동, 키/ID 유연한 형변환), 도서 4대 응답 DTO(`shelfTier`, `shelfOrder`) 전면 노출 및 `SHELF_PLACEMENT` 정렬 지원 완료 (신규 10건 포함 281개 단위 테스트 100% Pass, ruff/mypy 무결점)
 - [x] **Phase 63 (글로벌 도서 검색 1단계 Google Books 연동)**: `GoogleBooksClient` 구현(키워드/ISBN 검색, ISBN-13 우선, Cache-Control 준수, 429/타임아웃 격리, ISBN 엄격 대조), `BookSearchItem.data_source` 필드 추가 및 `BookSearchResponse.books` 호환 직렬화, 残 Deadline(4.5s) 기반 Google Books 조건부 호출 연동 완료 (신규 24건 포함 281개 테스트 100% Pass, ruff/mypy 무결점)
 - [x] **Phase 64 (도서 분류 체계 KDC/DDC/Genre 물리적 모듈 분리 및 삼각 데이터 계약 정비)**: KDC 전담(`kdc_mapper.py`), DDC 전담(`ddc_mapper.py`), 통합 오케스트레이터(`genre_mapper.py`) 분리 및 PEP 562 하위 호환성 유지, `data_source`와 `genre_source` 독립 분리, 안 A 확정(KDC 004/005는 대분류 `GENERAL` + `subject="컴퓨터/IT"` 보존 및 `display_genre` 노출), Google Books categories DDC 오인 차단, 사용자 수동 수정(USER) 불변 보호 및 불확실 도서 `GenreType.NONE` 정상 미분류 허용 완료 (신규 계약 테스트 8종 포함 299개 단위 테스트 100% Pass, ruff/mypy 무결점)
+- [x] **Phase 65 (자격증명 보안 강화: Refresh Token Response Body 노출 제거 및 HttpOnly 쿠키 단일화)**: `TokenResponse`, `LoginResponse`, `GuestLoginResponse` 응답 스키마 및 직렬화에서 `refresh_token` / `refreshToken` 필드 완전 배제(null이 아닌 필드 제거), 기존 Access Token 듀얼 필드(`accessToken`/`access_token`) 및 HttpOnly/SameSite 쿠키 발급·갱신·삭제 정책 100% 보존 완료 (전용 회귀 테스트 7종 포함 306개 단위 테스트 100% Pass, ruff/mypy 무결점)
 
 
 

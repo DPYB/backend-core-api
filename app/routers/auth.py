@@ -109,7 +109,6 @@ async def issue_guest_token(
 
     return GuestLoginResponse(
         access_token=access_token,
-        refresh_token=None,
         token_type="Bearer",
         expires_in=expires_in,
         guest_id=clean_guest_id,
@@ -405,7 +404,6 @@ async def dev_login(
 
     return LoginResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),
@@ -442,7 +440,6 @@ async def google_social_login(
 
     return LoginResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),
@@ -479,7 +476,6 @@ async def kakao_social_login(
 
     return LoginResponse(
         access_token=access_token,
-        refresh_token=refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),
@@ -522,7 +518,6 @@ async def refresh_token(
 
     return TokenResponse(
         access_token=new_access_token,
-        refresh_token=new_refresh_token,
         token_type="Bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         member_id=str(member.member_id),

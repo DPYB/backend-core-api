@@ -41,7 +41,10 @@ async def test_google_social_login_and_auto_signup(
         assert data["tokenType"] == "Bearer"
         assert data["isNewMember"] is True
         assert "accessToken" in data
-        assert "refreshToken" in data
+        assert "refreshToken" not in data
+        assert "refresh_token" not in data
+        assert "set-cookie" in resp.headers
+        assert "refresh_token=" in resp.headers["set-cookie"]
 
         member_id = uuid.UUID(data["memberId"])
 
@@ -116,9 +119,11 @@ async def test_refresh_token_endpoint(client: AsyncClient, db_session: AsyncSess
             "/api/v1/auth/social/google",
             json={"token": "mock-token"},
         )
-        refresh_token = login_resp.json()["refreshToken"]
+        # Body에는 없지만 쿠키로 정상 발급된 refresh_token 추출
+        refresh_token = login_resp.cookies.get("refresh_token")
+        assert refresh_token is not None
 
-    # refresh 요청
+    # refresh 요청 (바디에 토큰을 전달하는 하위 호환성 요청도 정상 수용 검증)
     refresh_resp = await client.post(
         "/api/v1/auth/refresh",
         json={"refreshToken": refresh_token},
@@ -126,7 +131,9 @@ async def test_refresh_token_endpoint(client: AsyncClient, db_session: AsyncSess
     assert refresh_resp.status_code == 200
     data = refresh_resp.json()
     assert "accessToken" in data
-    assert "refreshToken" in data
+    assert "access_token" in data
+    assert "refreshToken" not in data
+    assert "refresh_token" not in data
     assert data["isNewMember"] is False
 
 
@@ -295,11 +302,11 @@ async def test_login_and_cookie_for_existing_member(
     assert resp.status_code == 200
     data = resp.json()
 
-    # snake_case 및 camelCase 듀얼 지원 확인
+    # snake_case 및 camelCase 듀얼 지원 확인 (accessToken은 유지, refreshToken은 Body에서 완전 제거)
     assert data["accessToken"] is not None
     assert data["access_token"] == data["accessToken"]
-    assert data["refreshToken"] is not None
-    assert data["refresh_token"] == data["refreshToken"]
+    assert "refreshToken" not in data
+    assert "refresh_token" not in data
     assert data["tokenType"] == "Bearer"
     assert data["isNewMember"] is False
 
@@ -326,7 +333,8 @@ async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSe
         "/api/v1/auth/login",
         json={"email": "cookie_user@example.com"},
     )
-    refresh_token = login_resp.json()["refreshToken"]
+    refresh_token = login_resp.cookies.get("refresh_token")
+    assert refresh_token is not None
 
     # 바디 없이 쿠키 헤더만 전송하여 refresh 호출
     headers = {"Cookie": f"refresh_token={refresh_token}"}
@@ -339,6 +347,8 @@ async def test_refresh_token_via_cookie(client: AsyncClient, db_session: AsyncSe
     assert "accessToken" in data
     assert "access_token" in data
     assert data["accessToken"] is not None
+    assert "refreshToken" not in data
+    assert "refresh_token" not in data
     # 새 refresh 쿠키 재발급 확인
     assert "set-cookie" in refresh_resp.headers
     assert "refresh_token=" in refresh_resp.headers["set-cookie"]
